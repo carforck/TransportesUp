@@ -365,6 +365,22 @@ function duplicarBitacora(id) {
 }
 
 /* ================= Clientes ================= */
+// Íconos de acciones (trazo, heredan el color del botón)
+const ICO = {
+  lista: '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>',
+  doc: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 12v6M9 15h6"/>',
+  clip: '<path d="M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"/>',
+  lapiz: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
+  basura: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  descarga: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
+  copia: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
+};
+const ico = n => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICO[n]}</svg>`;
+// Botón de ícono: tipo 'a' (enlace) o 'button'; el texto va en title y aria-label
+const ib = (n, etiqueta, accion, extra = '') => accion.startsWith('#')
+  ? `<a class="ib ${extra}" href="${accion}" title="${etiqueta}" aria-label="${etiqueta}">${ico(n)}</a>`
+  : `<button type="button" class="ib ${extra}" onclick="${accion}" title="${etiqueta}" aria-label="${etiqueta}">${ico(n)}</button>`;
+
 // Filtros y página de cada lista (se conservan al refrescar en tiempo real)
 const FILTRO = { clientes: { q: '', cod: '', ips: '', anexos: '', p: 1 }, bitacoras: { q: '', m: '', cod: '', plan: '', est: '', al: '', p: 1 } };
 const codigosCliente = c => [...new Set([c.codigo, ...DB.bitacoras.filter(b => b.clienteId === c.id).map(b => codigoDe(b, c))].filter(Boolean))];
@@ -395,12 +411,15 @@ function viewClientes() {
         <td><small><b>${esc(ipsCanon(c.ips))}</b><br>${esc(c.origen)}<br>${hora12(c.horaIda)} / ${hora12(c.horaRegreso)}</small></td>
         <td>${codigosCliente(c).map(k => `<span class="badge b-mute" title="${esc(descCodigo(k))}">${esc(k)}</span>`).join(' ') || '—'}</td>
         <td>${miniAnexos(c)}<br><small>${[c.firma?.original && `<a href="${c.firma.original}" target="_blank">anexo firma</a>`, c.firmaId?.original && `<a href="${c.firmaId.original}" target="_blank">anexo # ID</a>`].filter(Boolean).join(' · ')}</small></td>
-        <td style="text-align:right;white-space:nowrap">
-          <a class="btn sm" href="#/registros?c=${c.id}&m=todos">Registros</a>
-          <button class="btn sm ${anexosCompletos(c) ? '' : 'primary'}" onclick="capturarFirma('${c.id}')">📎 Firma e ID</button>
-          <button class="btn sm" onclick="formCliente('${c.id}')">✏️ Editar</button>
-          <button class="btn sm danger" onclick="eliminarCliente('${c.id}')" aria-label="Eliminar">🗑</button>
-          <a class="btn sm" href="#/bitacora/nueva?c=${c.id}">Bitácora</a></td></tr>`).join('')}
+        <td class="acciones"><div class="acc">
+          ${anexosCompletos(c) ? '' : `<button class="btn sm acc-main" onclick="capturarFirma('${c.id}')">${ico('clip')} Adjuntar ${faltantes(c).join(' y ')}</button>`}
+          <div class="acc-grupo" role="group" aria-label="Acciones de ${esc(c.paciente)}">
+            ${ib('lista', 'Ver registros', `#/registros?c=${c.id}&m=todos`)}
+            ${ib('doc', 'Nueva bitácora', `#/bitacora/nueva?c=${c.id}`)}
+            ${anexosCompletos(c) ? ib('clip', 'Cambiar firma e ID', `capturarFirma('${c.id}')`) : ''}
+            ${ib('lapiz', 'Editar cliente', `formCliente('${c.id}')`)}
+            ${ib('basura', 'Eliminar cliente', `eliminarCliente('${c.id}')`, 'peligro')}
+          </div></div></td></tr>`).join('')}
     </table></div>${paginadorHtml(pg, 'clientes')}`
       : `<div class="empty">${todos.length ? 'Ningún cliente coincide con los filtros. <button class="btn sm" id="limpiar">Limpiar filtros</button>' : 'Crea tu primer cliente o importa los PDF de una entrega'}</div>`}</div>`;
   const set = cambios => { Object.assign(F, cambios, 'p' in cambios ? {} : { p: 1 }); viewClientes(); };
@@ -670,10 +689,11 @@ function viewBitacoras(param = '') {
       <td>${fechasDe(b).length}</td><td>${modoBadge(b)}</td>
       <td><span class="badge ${e.cls}">${e.txt}</span></td>
       <td onclick="event.stopPropagation()"><details class="al-det"><summary>${resumenAlertas(al)}</summary>${listaAlertas(al)}</details></td>
-      <td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
-        <button class="btn sm" onclick="descargarPDF('${b.id}')" title="Descargar PDF con el nombre de entrega">⬇ PDF</button>
-        <button class="btn sm" onclick="duplicarBitacora('${b.id}')" title="Duplicar al mes siguiente">⧉</button>
-        <button class="btn sm danger" onclick="eliminarBitacora('${b.id}')" aria-label="Eliminar">🗑</button></td></tr>`;
+      <td class="acciones" onclick="event.stopPropagation()"><div class="acc"><div class="acc-grupo" role="group" aria-label="Acciones">
+        ${ib('descarga', 'Descargar PDF (nombre de entrega)', `descargarPDF('${b.id}')`)}
+        ${ib('lapiz', 'Abrir y editar', `#/bitacora/${b.id}`)}
+        ${ib('copia', 'Duplicar al mes siguiente', `duplicarBitacora('${b.id}')`)}
+        ${ib('basura', 'Eliminar bitácora', `eliminarBitacora('${b.id}')`, 'peligro')}</div></div></td></tr>`;
   }).join('');
   app.innerHTML = `
     <div class="head"><div><h1>Bitácoras</h1><p class="sub">Una por paciente, mes y código · cada fecha genera las filas de ida y regreso</p></div>
