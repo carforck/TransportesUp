@@ -7,7 +7,9 @@ let DB = { config: {}, clientes: [], bitacoras: [] };
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const hoy = () => new Date().toISOString().slice(0, 10);
-const periodoTxt = p => { const [y, m] = p.split('-'); return `${MESES[+m - 1]} ${y}`; };
+// Mes AAAA-MM válido. Todo mes que venga de la URL se valida: el hash es editable y no debe llegar crudo al HTML.
+const mesValido = m => /^\d{4}-(0[1-9]|1[0-2])$/.test(m || '');
+const periodoTxt = p => { if (!mesValido(p)) return esc(p); const [y, m] = p.split('-'); return `${MESES[+m - 1]} ${y}`; };
 const fechaDoc = iso => { const [y, m, d] = iso.split('-'); return `${+d}/${m}/${y}`; };
 const fechaLarga = iso => { if (!iso) return '—'; const [y, m, d] = iso.split('-'); return `${+d} ${MESES[+m - 1].slice(0, 3)} ${y}`; };
 const hora12 = h => { if (!h) return ''; let [H, M] = h.split(':').map(Number); const ap = H >= 12 ? 'PM' : 'AM'; H = H % 12 || 12; return `${String(H).padStart(2, '0')}:${String(M).padStart(2, '0')} ${ap}`; };
@@ -216,7 +218,7 @@ function irClientes(f = {}) { FILTRO.clientes = { q: '', cod: '', ips: '', anexo
 function viewDashboard(param = '') {
   const q = new URLSearchParams((param.split('?')[1]) || '');
   const actual = hoy().slice(0, 7);
-  const mes = q.get('m') || mesPorDefecto();
+  const mes = mesValido(q.get('m')) ? q.get('m') : mesPorDefecto();
   const ir = cambios => { location.hash = '#/?' + new URLSearchParams({ m: mes, ...cambios }); };
   window.__dashIr = ir;
 
@@ -573,8 +575,8 @@ const REG_ABIERTOS = {}; // pacientes desplegados en Registros: { id: true|false
 function viewRegistros(qs = '') {
   const p = new URLSearchParams(qs);
   const meses = mesesConDatos();
-  const mes = p.get('m') || mesPorDefecto();
-  const cid = p.get('c') || '';
+  const mes = p.get('m') === 'todos' || mesValido(p.get('m')) ? p.get('m') : mesPorDefecto();
+  const cid = cliente(p.get('c')) ? p.get('c') : ''; // solo ids que existen
   const buscar = (p.get('q') || '').toUpperCase();
   const ir = cambios => { const n = new URLSearchParams({ m: mes, c: cid, q: buscar, ...cambios }); [...n.keys()].forEach(k => !n.get(k) && n.delete(k)); location.hash = '#/registros?' + n; };
   window.__irReg = ir;
@@ -696,7 +698,7 @@ function agregarFecha(cid, mes) {
 /* ================= Bitácoras ================= */
 function viewBitacoras(param = '') {
   const F = FILTRO.bitacoras, qs = new URLSearchParams(String(param).replace(/^\?/, ''));
-  if (qs.get('m')) { F.m = qs.get('m'); F.p = 1; history.replaceState(null, '', '#/bitacoras'); }
+  if (qs.get('m')) { if (mesValido(qs.get('m'))) { F.m = qs.get('m'); F.p = 1; } history.replaceState(null, '', '#/bitacoras'); }
   const meses = [...new Set(DB.bitacoras.map(b => b.periodo))].sort().reverse();
   const q = sinTildes(F.q);
   const conAl = DB.bitacoras.map(b => ({ b, c: cliente(b.clienteId), al: validarBitacora(b) }));
@@ -753,7 +755,7 @@ function viewBitacora(param = '') {
   const [id, qs] = param.split('?');
   const nueva = id === 'nueva';
   const pre = new URLSearchParams(qs || '').get('c');
-  const mes = new URLSearchParams(qs || '').get('m') || hoy().slice(0, 7);
+  const mParam = new URLSearchParams(qs || '').get('m'), mes = mesValido(mParam) ? mParam : hoy().slice(0, 7);
   // Nueva: NO se preselecciona ningún paciente; se elige (o se crea) en el paso 1
   const b = nueva ? { clienteId: pre && cliente(pre) ? pre : '', periodo: mes, fechas: [], modoFirma: 'digital', agendaFirma: '', estado: 'pendiente', plan: '' }
     : structuredClone(DB.bitacoras.find(x => x.id === id) || null);
