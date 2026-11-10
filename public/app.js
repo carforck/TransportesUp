@@ -71,6 +71,25 @@ async function router() {
   (routes[name] || viewDashboard)(id);
 }
 window.addEventListener('hashchange', () => { router(); window.scrollTo(0, 0); });
+// Navegación: "Volver" lleva a la lista (con los filtros y la página que tenía); Anterior/Siguiente recorre esa lista
+const NAV = { bitacoras: [] };
+const volver = destino => { location.hash = destino; };
+function navBitacora(id) {
+  const orden = NAV.bitacoras.length ? NAV.bitacoras : [...DB.bitacoras].sort((a, b) => b.periodo.localeCompare(a.periodo) || (cliente(a.clienteId)?.paciente || '').localeCompare(cliente(b.clienteId)?.paciente || '')).map(b => b.id);
+  const i = orden.indexOf(id);
+  const ant = i > 0 ? orden[i - 1] : null, sig = i >= 0 && i < orden.length - 1 ? orden[i + 1] : null;
+  return `<nav class="nav-reg" aria-label="Navegación">
+    <button class="btn sm" onclick="volver('#/bitacoras')">← Volver</button>
+    ${i >= 0 ? `<span class="nav-pos muted">${i + 1} de ${orden.length}</span>
+    <a class="btn sm ${ant ? '' : 'disabled'}" ${ant ? `href="#/bitacora/${ant}"` : 'aria-disabled="true"'} title="Bitácora anterior (Alt + ←)">‹ Anterior</a>
+    <a class="btn sm ${sig ? '' : 'disabled'}" ${sig ? `href="#/bitacora/${sig}"` : 'aria-disabled="true"'} title="Bitácora siguiente (Alt + →)">Siguiente ›</a>` : ''}</nav>`;
+}
+// Atajos Alt+← / Alt+→ dentro de una bitácora (sin pisar el comportamiento del navegador en otras vistas)
+document.addEventListener('keydown', e => {
+  if (!e.altKey || !location.hash.startsWith('#/bitacora/') || !['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+  const a = $(`.nav-reg a[title^="${e.key === 'ArrowLeft' ? 'Bitácora anterior' : 'Bitácora siguiente'}"][href]`);
+  if (a) { e.preventDefault(); a.click(); }
+});
 
 /* ================= Dashboard ================= */
 /* ================= Dashboard ================= */
@@ -233,7 +252,7 @@ function viewDashboard(param = '') {
   app.innerHTML = `
     <div class="head dash-head"><div><h1>Hola 👋</h1><p class="sub" style="text-transform:none">${fechaHoy} · ${esc(DB.config.eps)}</p></div>
       <div class="row"><button class="btn" onclick="formCliente()">+ Cliente</button>
-        <button class="btn" onclick="importarFormato()" title="Sube una bitácora PDF ya hecha: se leen el paciente y las fechas">⬆ Importar PDF</button>
+        <button class="btn" onclick="importarLote()" title="Sube una bitácora PDF ya hecha: se leen el paciente y las fechas">⬆ Importar PDF</button>
         <a class="btn primary" href="#/bitacora/nueva?m=${mes}">+ Nueva bitácora</a></div></div>
 
     <div class="dash-filtros" role="group" aria-label="Filtros del dashboard">
@@ -346,24 +365,51 @@ function duplicarBitacora(id) {
 }
 
 /* ================= Clientes ================= */
+// Filtros y página de cada lista (se conservan al refrescar en tiempo real)
+const FILTRO = { clientes: { q: '', cod: '', ips: '', anexos: '', p: 1 }, bitacoras: { q: '', m: '', cod: '', plan: '', est: '', al: '', p: 1 } };
+const codigosCliente = c => [...new Set([c.codigo, ...DB.bitacoras.filter(b => b.clienteId === c.id).map(b => codigoDe(b, c))].filter(Boolean))];
 function viewClientes() {
+  const F = FILTRO.clientes, q = sinTildes(F.q);
+  const todos = [...DB.clientes].sort((a, b) => a.paciente.localeCompare(b.paciente));
+  const lista = todos.filter(c => (!q || sinTildes(`${c.paciente} ${c.docPaciente} ${c.acudiente} ${c.docAcudiente}`).includes(q))
+    && (!F.cod || codigosCliente(c).includes(F.cod)) && (!F.ips || ipsCanon(c.ips) === F.ips)
+    && (!F.anexos || (F.anexos === 'completos' ? anexosCompletos(c) : !anexosCompletos(c))));
+  const pg = paginar(lista, F.p, 20);
+  const codsUsados = [...new Set(todos.flatMap(codigosCliente))].sort(), ipsUsadas = [...new Set(todos.map(c => ipsCanon(c.ips)))].sort();
+  const faltan = todos.filter(c => !anexosCompletos(c)).length;
+  const opt = (v, sel, txt = v) => `<option value="${esc(v)}" ${v === sel ? 'selected' : ''}>${esc(txt)}</option>`;
   app.innerHTML = `
     <div class="head"><div><h1>Clientes</h1><p class="sub">Paciente, quien firma, ruta fija y la firma que se anexa automáticamente a las bitácoras</p></div>
-      <button class="btn primary" onclick="formCliente()">+ Nuevo cliente</button></div>
-    <div class="card">${DB.clientes.length ? `<table class="list">
-      <tr><th>Paciente</th><th>Firma a nombre de</th><th>Ruta</th><th>Firma · # ID</th><th></th></tr>
-      ${DB.clientes.map(c => `<tr>
+      <div class="row"><button class="btn" onclick="importarLote()">⬆ Importar PDF</button><button class="btn primary" onclick="formCliente()">+ Nuevo cliente</button></div></div>
+    <div class="filtros">
+      <label>Buscar<input id="fq" type="search" placeholder="Nombre o documento" value="${esc(F.q)}"></label>
+      <label>Código<select id="fcod"><option value="">Todos</option>${codsUsados.map(c => opt(c, F.cod)).join('')}</select></label>
+      <label>IPS<select id="fips"><option value="">Todas</option>${ipsUsadas.map(c => opt(c, F.ips)).join('')}</select></label>
+      <label>Firma e ID<select id="fan"><option value="">Todos</option>${opt('faltan', F.anexos, `Les falta (${faltan})`)}${opt('completos', F.anexos, 'Completos')}</select></label>
+    </div>
+    <div class="card">${pg.total ? `<div class="tabla-scroll"><table class="list">
+      <tr><th>Paciente</th><th>Firma a nombre de</th><th>Ruta</th><th>Código</th><th>Firma · # ID</th><th></th></tr>
+      ${pg.items.map(c => `<tr>
         <td><b>${esc(c.paciente)}</b><br><small class="muted">CC ${esc(c.docPaciente)}</small></td>
         <td>${esc(nombreFirmante(c) || '—')}<br><small class="muted">${esPaciente(c) ? 'Paciente' : 'Acudiente'}${docFirmante(c) ? ' · CC ' + esc(docFirmante(c)) : ''}</small></td>
-        <td><small>${esc(c.origen)} → ${esc(c.ips)} → ${esc(c.regreso)}<br>${hora12(c.horaIda)} / ${hora12(c.horaRegreso)}</small></td>
+        <td><small><b>${esc(ipsCanon(c.ips))}</b><br>${esc(c.origen)}<br>${hora12(c.horaIda)} / ${hora12(c.horaRegreso)}</small></td>
+        <td>${codigosCliente(c).map(k => `<span class="badge b-mute" title="${esc(descCodigo(k))}">${esc(k)}</span>`).join(' ') || '—'}</td>
         <td>${miniAnexos(c)}<br><small>${[c.firma?.original && `<a href="${c.firma.original}" target="_blank">anexo firma</a>`, c.firmaId?.original && `<a href="${c.firmaId.original}" target="_blank">anexo # ID</a>`].filter(Boolean).join(' · ')}</small></td>
         <td style="text-align:right;white-space:nowrap">
           <a class="btn sm" href="#/registros?c=${c.id}&m=todos">Registros</a>
-          <button class="btn sm" onclick="capturarFirma('${c.id}')">📎 Firma e ID</button>
+          <button class="btn sm ${anexosCompletos(c) ? '' : 'primary'}" onclick="capturarFirma('${c.id}')">📎 Firma e ID</button>
           <button class="btn sm" onclick="formCliente('${c.id}')">✏️ Editar</button>
-          <button class="btn sm danger" onclick="eliminarCliente('${c.id}')">🗑</button>
-          <a class="btn sm primary" href="#/bitacora/nueva?c=${c.id}">Bitácora</a></td></tr>`).join('')}
-    </table>` : '<div class="empty">Crea tu primer cliente</div>'}</div>`;
+          <button class="btn sm danger" onclick="eliminarCliente('${c.id}')" aria-label="Eliminar">🗑</button>
+          <a class="btn sm" href="#/bitacora/nueva?c=${c.id}">Bitácora</a></td></tr>`).join('')}
+    </table></div>${paginadorHtml(pg, 'clientes')}`
+      : `<div class="empty">${todos.length ? 'Ningún cliente coincide con los filtros. <button class="btn sm" id="limpiar">Limpiar filtros</button>' : 'Crea tu primer cliente o importa los PDF de una entrega'}</div>`}</div>`;
+  const set = cambios => { Object.assign(F, cambios, 'p' in cambios ? {} : { p: 1 }); viewClientes(); };
+  let t; $('#fq').oninput = e => { clearTimeout(t); t = setTimeout(() => { set({ q: e.target.value.trim() }); const f = $('#fq'); f.focus(); f.setSelectionRange(f.value.length, f.value.length); }, 300); };
+  $('#fcod').onchange = e => set({ cod: e.target.value });
+  $('#fips').onchange = e => set({ ips: e.target.value });
+  $('#fan').onchange = e => set({ anexos: e.target.value });
+  $('#limpiar')?.addEventListener('click', () => set({ q: '', cod: '', ips: '', anexos: '' }));
+  enlazarPaginador(app, p => set({ p }));
 }
 
 function formCliente(id, prefill = {}, onSaved) {
@@ -383,8 +429,11 @@ function formCliente(id, prefill = {}, onSaved) {
         <div class="form" id="acuFields">
           ${f('acudiente', 'Nombre del acudiente')}${f('docAcudiente', '# ID acudiente', 'inputmode="numeric"')}${f('telefono', 'Teléfono de contacto', 'inputmode="tel"')}</div></fieldset>
       <fieldset><legend>Ruta fija</legend><div class="form">
-        ${f('origen', 'Dirección de recogida (ida)', 'required')}${f('ips', 'IPS destino', 'required')}
-        ${f('regreso', 'Punto de regreso', 'required')}<span></span>
+        ${f('origen', 'Dirección de recogida (ida)', 'required')}${f('ips', 'IPS destino', 'required list="ipsSug"')}
+        <datalist id="ipsSug">${[...new Set(DB.clientes.map(x => x.ips).filter(Boolean))].sort().map(x => `<option value="${esc(x)}">`).join('')}</datalist>
+        ${f('regreso', 'Punto de regreso', 'required')}
+        <label>Código de tecnología (por defecto)<select name="codigo">
+          ${codigos().map(k => `<option value="${esc(k.codigo)}" ${k.codigo === (c.codigo || DB.config.codigo) ? 'selected' : ''}>${esc(k.codigo)} · ${esc(k.descripcion.slice(0, 60))}</option>`).join('')}</select></label>
         ${f('horaIda', 'Hora ida', 'type="time" required')}${f('horaRegreso', 'Hora regreso', 'type="time" required')}</div></fieldset>
       <fieldset><legend>Firma</legend>
         <p class="muted" style="margin:0 0 10px">Adjunte la foto o escaneo de la firma: se le quita el fondo automáticamente y se guarda junto con el anexo original.</p>
@@ -473,77 +522,7 @@ function cargarScript(src) {
   });
 }
 
-/* ================= Cargar formato PDF existente ================= */
-function importarFormato() {
-  const m = modal(`
-    <h2 style="margin-top:0">Importar bitácora PDF</h2>
-    <p class="sub">¿Ya tiene la bitácora hecha en Excel/PDF (ej. <code>TNA_901729817_NOMBRE.pdf</code>)? Súbala aquí y no tendrá que marcar las fechas a mano: se leen el <b>ID del paciente</b> y las <b>fechas de servicio</b>, y se crea la bitácora con la firma del cliente ya anexada. Si el paciente no existe, se crea con esos datos.</p>
-    <label class="drop" id="drop">📄 Arrastra el PDF aquí o haz clic para elegirlo<input type="file" accept="application/pdf" hidden id="pdf"></label>
-    <div id="res" style="margin-top:14px"></div>`);
-  const inp = $('#pdf', m), drop = $('#drop', m);
-  drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
-  drop.ondragleave = () => drop.classList.remove('over');
-  drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer.files[0]) leer(e.dataTransfer.files[0]); };
-  inp.onchange = () => inp.files[0] && leer(inp.files[0]);
-
-  async function leer(file) {
-    const res = $('#res', m);
-    res.innerHTML = '<div class="empty">Leyendo PDF…</div>';
-    try {
-      await cargarScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-      const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
-      let texto = '';
-      for (let i = 1; i <= pdf.numPages; i++) texto += ' ' + (await (await pdf.getPage(i)).getTextContent()).items.map(t => t.str).join(' ');
-      const d = analizarFormato(texto, file.name);
-      if (!d.fechas.length) { res.innerHTML = '<div class="empty">No encontré fechas en el PDF. Si es un escaneo (imagen) no se puede leer: créalo desde "Nueva bitácora".</div>'; return; }
-      mostrar(d);
-    } catch (e) { res.innerHTML = `<p class="err">No se pudo leer el PDF: ${esc(e.message)}</p>`; }
-  }
-
-  function mostrar(d) {
-    const c = DB.clientes.find(x => x.docPaciente === d.docPaciente);
-    const meses = [...new Set(d.fechas.map(f => f.slice(0, 7)))];
-    $('#res', m).innerHTML = `
-      <div class="card" style="margin:0">
-        <p><b>Paciente:</b> ${esc(d.nombre || '—')} · <b>ID:</b> ${esc(d.docPaciente || '—')}</p>
-        <p><b>${d.fechas.length} fechas</b> en ${meses.map(periodoTxt).join(', ')}: <small class="muted">${d.fechas.map(fechaDoc).join(', ')}</small></p>
-        ${c ? `<p>Cliente encontrado: <b>${esc(c.paciente)}</b> ${firmaBadge(c)} ${anexosCompletos(c) ? '— la firma y el # ID se anexarán en todas las filas.' : '— falta ' + faltantes(c).join(' y ') + '; podrá adjuntarlo desde la bitácora.'}</p>`
-          : '<p><span class="badge b-warn">Cliente no registrado</span> Se creará con estos datos y podrá anexarle la firma de una vez.</p>'}
-        <div class="row" style="justify-content:flex-end"><button class="btn primary" id="crear">${c ? 'Crear bitácora' : 'Crear cliente y bitácora'}</button></div>
-      </div>`;
-    $('#crear', m).onclick = async () => {
-      if (c) return crearBitacoras(c.id, d.fechas);
-      formCliente(null, { paciente: d.nombre, docPaciente: d.docPaciente, ...(d.ruta || {}) }, saved => crearBitacoras(saved.id, d.fechas));
-    };
-  }
-}
-
-function analizarFormato(texto, archivo) {
-  const t = texto.replace(/\s+/g, ' ');
-  const fechas = [...new Set([...t.matchAll(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/g)].map(([, d, mo, y]) => `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`))].sort();
-  const cuenta = {};
-  for (const [n] of t.matchAll(/(?<![\w/])\d{6,11}(?![\w/])/g)) if (n !== DB.config.nit) cuenta[n] = (cuenta[n] || 0) + 1;
-  const docPaciente = Object.entries(cuenta).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
-  // Nombre: del archivo TNA_<NIT>_<NOMBRE>.pdf o del texto antes del ID
-  let nombre = (/^TNA_\d+_(.+)\.pdf$/i.exec(archivo) || /^(.+?) - [A-ZÁÉÍÓÚa-záéíóú]+ \d{4}(?: \(\d+\))?\.pdf$/i.exec(archivo) || [])[1] || '';
-  if (!nombre && docPaciente) nombre = (new RegExp(`\\d{4}\\s+([A-ZÁÉÍÓÚÑ ]{6,}?)\\s+${docPaciente}`).exec(t) || [])[1] || '';
-  return { fechas, docPaciente, nombre: nombre.trim().toUpperCase() };
-}
-
-async function crearBitacoras(clienteId, fechas) {
-  const porMes = {};
-  fechas.forEach(f => (porMes[f.slice(0, 7)] ||= []).push(f));
-  let ultima;
-  for (const [periodo, fs] of Object.entries(porMes)) {
-    const existe = DB.bitacoras.find(b => b.clienteId === clienteId && b.periodo === periodo);
-    ultima = existe
-      ? await api('PUT', 'bitacoras/' + existe.id, { fechas: [...new Set([...existe.fechas, ...fs])].sort(), modoFirma: 'digital' })
-      : await api('POST', 'bitacoras', { clienteId, periodo, fechas: fs, modoFirma: 'digital', agendaFirma: '', estado: 'pendiente' });
-  }
-  closeModal(); toast('Bitácora creada desde el formato');
-  location.hash = '#/bitacora/' + ultima.id;
-}
+/* Importación de PDF (uno o muchos), validaciones, catálogos y exportación por lote: ver lote.js */
 
 /* ================= Registros por paciente y mes ================= */
 const mesesConDatos = () => [...new Set(DB.bitacoras.map(b => b.periodo))].sort().reverse();
@@ -576,6 +555,7 @@ function viewRegistros(qs = '') {
   if (buscar) bits = bits.filter(b => { const c = cliente(b.clienteId); return `${c?.paciente} ${c?.docPaciente} ${c?.acudiente}`.toUpperCase().includes(buscar); });
   const porPac = {};
   bits.forEach(b => (porPac[b.clienteId] ||= []).push(b));
+  const pgReg = paginar(Object.entries(porPac).sort((x, y) => (cliente(x[0])?.paciente || '').localeCompare(cliente(y[0])?.paciente || '')), p.get('p') || 1, 10);
   const servicios = bits.reduce((s, b) => s + b.fechas.length, 0);
   const conFirma = bits.filter(b => b.modoFirma === 'digital' && anexosCompletos(cliente(b.clienteId))).reduce((s, b) => s + b.fechas.length, 0);
 
@@ -604,7 +584,7 @@ function viewRegistros(qs = '') {
 
   app.innerHTML = `
     <div class="head"><div><h1>Registros</h1><p class="sub">Servicios de cada paciente en lista, por mes</p></div>
-      <div class="row"><button class="btn" onclick="importarFormato()" title="Sube una bitácora PDF ya hecha (TNA_…pdf): se leen el paciente y las fechas y se crea la bitácora con la firma anexada">⬆ Importar bitácora PDF</button></div></div>
+      <div class="row"><button class="btn" onclick="importarLote()" title="Sube una bitácora PDF ya hecha (TNA_…pdf): se leen el paciente y las fechas y se crea la bitácora con la firma anexada">⬆ Importar bitácora PDF</button></div></div>
     <div class="filtros">
       <label>Mes<select id="fm"><option value="todos" ${mes === 'todos' ? 'selected' : ''}>Todos los meses</option>
         ${[...new Set([...meses, mes === 'todos' ? null : mes].filter(Boolean))].sort().reverse().map(m => `<option value="${m}" ${m === mes ? 'selected' : ''}>${periodoTxt(m)}</option>`).join('')}</select></label>
@@ -618,7 +598,7 @@ function viewRegistros(qs = '') {
       <span class="chip"><b>${servicios * 2}</b> filas (ida y regreso)</span>
       <span class="chip"><b>${conFirma}</b> con firma e ID anexados</span>
     </div>
-    ${Object.keys(porPac).length ? Object.entries(porPac).map(([id, lista]) => { const c = cliente(id); const n = lista.reduce((s, b) => s + b.fechas.length, 0); return `
+    ${pgReg.total ? pgReg.items.map(([id, lista]) => { const c = cliente(id); const n = lista.reduce((s, b) => s + b.fechas.length, 0); return `
       <div class="card">
         <div class="pac-head">
           <div><h2>${esc(c.paciente)}</h2><small class="muted">CC ${esc(c.docPaciente)} · firma: ${esc(nombreFirmante(c) || '—')} ${docFirmante(c) ? '(CC ' + esc(docFirmante(c)) + ')' : ''} · ${n} servicios</small></div>
@@ -628,7 +608,9 @@ function viewRegistros(qs = '') {
         </div>
         <table class="list reg"><tr><th>Fecha</th><th>Ida</th><th>Regreso</th><th>Firma</th><th># ID</th><th></th></tr>${filasPac(c, lista)}</table>
       </div>`; }).join('')
+      + paginadorHtml(pgReg, 'pacientes')
       : `<div class="card empty">No hay registros ${mes === 'todos' ? '' : 'en ' + periodoTxt(mes)}${cid ? ' para este paciente' : ''}.</div>`}`;
+  enlazarPaginador(app, n => ir({ p: n }));
 
   $('#fm').onchange = e => ir({ m: e.target.value });
   $('#fc').onchange = e => ir({ c: e.target.value });
@@ -662,12 +644,58 @@ function agregarFecha(cid, mes) {
 }
 
 /* ================= Bitácoras ================= */
-function viewBitacoras() {
-  const list = [...DB.bitacoras].sort((a, b) => b.periodo.localeCompare(a.periodo));
+function viewBitacoras(param = '') {
+  const F = FILTRO.bitacoras, qs = new URLSearchParams(String(param).replace(/^\?/, ''));
+  if (qs.get('m')) { F.m = qs.get('m'); F.p = 1; history.replaceState(null, '', '#/bitacoras'); }
+  const meses = [...new Set(DB.bitacoras.map(b => b.periodo))].sort().reverse();
+  const q = sinTildes(F.q);
+  const conAl = DB.bitacoras.map(b => ({ b, c: cliente(b.clienteId), al: validarBitacora(b) }));
+  const lista = conAl.filter(({ b, c, al }) => (!F.m || b.periodo === F.m) && (!F.cod || codigoDe(b, c) === F.cod) && (!F.plan || (b.plan || 'sin') === F.plan)
+      && (!q || sinTildes(`${c?.paciente} ${c?.docPaciente}`).includes(q))
+      && (!F.est || (F.est === 'firmado' ? b.estado === 'firmado' : F.est === 'faltan' ? b.modoFirma === 'digital' && !anexosCompletos(c) : b.estado !== 'firmado'))
+      && (!F.al || al.some(a => a.nivel === F.al)))
+    .sort((x, y) => y.b.periodo.localeCompare(x.b.periodo) || (x.c?.paciente || '').localeCompare(y.c?.paciente || ''));
+  const pg = paginar(lista, F.p, 25);
+  NAV.bitacoras = lista.map(x => x.b.id); // orden para "‹ Anterior / Siguiente ›" dentro de cada bitácora
+  const codsUsados = [...new Set(conAl.map(({ b, c }) => codigoDe(b, c)).filter(Boolean))].sort();
+  const opt = (v, sel, txt = v) => `<option value="${esc(v)}" ${v === sel ? 'selected' : ''}>${esc(txt)}</option>`;
+  const resumenMes = per => { const l = conAl.filter(x => x.b.periodo === per); return `${l.length} bitácoras · ${l.reduce((s, x) => s + fechasDe(x.b).length, 0)} servicios · ⛔ ${l.filter(x => x.al.some(a => a.nivel === 'error')).length} · ⚠️ ${l.filter(x => x.al.some(a => a.nivel === 'aviso')).length}`; };
+  let mesAnt = '';
+  const filasHtml = pg.items.map(({ b, c, al }) => {
+    const e = estadoFirma(b), sep = b.periodo !== mesAnt ? (mesAnt = b.periodo, `<tr class="grupo"><td colspan="7"><div class="grupo-in"><b>${periodoTxt(b.periodo)}</b><small class="muted">${resumenMes(b.periodo)}</small>
+      <button class="btn sm" onclick="event.stopPropagation();exportarLote('${b.periodo}')">⬇ Exportar lote</button></div></td></tr>`) : '';
+    return sep + `<tr class="click" onclick="location.hash='#/bitacora/${b.id}'">
+      <td><b>${esc(c?.paciente || '(cliente eliminado)')}</b><br><small class="muted">${esc(c?.docPaciente || '')} · ${esc(ipsCanon(c?.ips))}</small></td>
+      <td>${codBadge(b)} ${planBadge(b.plan)}</td>
+      <td>${fechasDe(b).length}</td><td>${modoBadge(b)}</td>
+      <td><span class="badge ${e.cls}">${e.txt}</span></td>
+      <td onclick="event.stopPropagation()"><details class="al-det"><summary>${resumenAlertas(al)}</summary>${listaAlertas(al)}</details></td>
+      <td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
+        <button class="btn sm" onclick="descargarPDF('${b.id}')" title="Descargar PDF con el nombre de entrega">⬇ PDF</button>
+        <button class="btn sm" onclick="duplicarBitacora('${b.id}')" title="Duplicar al mes siguiente">⧉</button>
+        <button class="btn sm danger" onclick="eliminarBitacora('${b.id}')" aria-label="Eliminar">🗑</button></td></tr>`;
+  }).join('');
   app.innerHTML = `
-    <div class="head"><div><h1>Bitácoras</h1><p class="sub">Una bitácora por cliente y mes · cada fecha genera las filas de ida y regreso</p></div>
-      <div class="row"><button class="btn" onclick="importarFormato()" title="Sube una bitácora PDF ya hecha (TNA_…pdf): se leen el paciente y las fechas y se crea la bitácora con la firma anexada">⬆ Importar bitácora PDF</button><a class="btn primary" href="#/bitacora/nueva">+ Nueva bitácora</a></div></div>
-    <div class="card">${tablaBitacoras(list, true)}</div>`;
+    <div class="head"><div><h1>Bitácoras</h1><p class="sub">Una por paciente, mes y código · cada fecha genera las filas de ida y regreso</p></div>
+      <div class="row"><button class="btn" onclick="importarLote()" title="Uno o varios PDF (TNA_…pdf): se crean clientes y bitácoras y se revisan antes de guardar">⬆ Importar PDF</button>
+        <button class="btn" onclick="exportarLote(FILTRO.bitacoras.m)">⬇ Exportar lote</button>
+        <a class="btn primary" href="#/bitacora/nueva">+ Nueva bitácora</a></div></div>
+    <div class="filtros">
+      <label>Mes<select id="bm"><option value="">Todos</option>${meses.map(m => opt(m, F.m, periodoTxt(m))).join('')}</select></label>
+      <label>Buscar<input id="bq" type="search" placeholder="Paciente o documento" value="${esc(F.q)}"></label>
+      <label>Código<select id="bc"><option value="">Todos</option>${codsUsados.map(c => opt(c, F.cod)).join('')}</select></label>
+      <label>PBS<select id="bp"><option value="">Todos</option>${opt('PBS', F.plan)}${opt('NO PBS', F.plan)}${opt('sin', F.plan, 'Sin marcar')}</select></label>
+      <label>Estado<select id="be"><option value="">Todos</option>${opt('pendiente', F.est, 'Pendientes')}${opt('faltan', F.est, 'Les falta firma o # ID')}${opt('firmado', F.est, 'Firmadas')}</select></label>
+      <label>Revisión<select id="ba"><option value="">Todas</option>${opt('error', F.al, '⛔ Con errores')}${opt('aviso', F.al, '⚠️ Con avisos')}</select></label>
+    </div>
+    <div class="card">${pg.total ? `<div class="tabla-scroll"><table class="list bits">
+      <tr><th>Paciente</th><th>Código</th><th>Serv.</th><th>Firma</th><th>Estado</th><th>Revisión</th><th></th></tr>${filasHtml}</table></div>${paginadorHtml(pg, 'bitácoras')}`
+      : `<div class="empty">${DB.bitacoras.length ? 'Ninguna bitácora coincide con los filtros. <button class="btn sm" id="blimpiar">Limpiar filtros</button>' : 'Aún no hay bitácoras. Importe los PDF de una entrega o cree una nueva.'}</div>`}</div>`;
+  const set = cambios => { Object.assign(FILTRO.bitacoras, cambios, 'p' in cambios ? {} : { p: 1 }); viewBitacoras(); };
+  let t; $('#bq').oninput = e => { clearTimeout(t); t = setTimeout(() => { set({ q: e.target.value.trim() }); const f = $('#bq'); f.focus(); f.setSelectionRange(f.value.length, f.value.length); }, 300); };
+  [['#bm', 'm'], ['#bc', 'cod'], ['#bp', 'plan'], ['#be', 'est'], ['#ba', 'al']].forEach(([sel, k]) => $(sel).onchange = e => set({ [k]: e.target.value }));
+  $('#blimpiar')?.addEventListener('click', () => set({ q: '', m: '', cod: '', plan: '', est: '', al: '' }));
+  enlazarPaginador(app, p => set({ p }));
 }
 
 function viewBitacora(param = '') {
@@ -676,7 +704,7 @@ function viewBitacora(param = '') {
   if (nueva && !DB.clientes.length) { app.innerHTML = '<div class="card empty">Primero crea un cliente. <button class="btn primary" onclick="formCliente()">+ Cliente</button></div>'; return; }
   const pre = new URLSearchParams(qs || '').get('c');
   const mes = new URLSearchParams(qs || '').get('m') || hoy().slice(0, 7);
-  const b = nueva ? { clienteId: pre || DB.clientes[0].id, periodo: mes, fechas: [], modoFirma: 'digital', agendaFirma: '', estado: 'pendiente' }
+  const b = nueva ? { clienteId: pre || DB.clientes[0].id, periodo: mes, fechas: [], modoFirma: 'digital', agendaFirma: '', estado: 'pendiente', plan: '' }
     : structuredClone(DB.bitacoras.find(x => x.id === id) || null);
   if (!b) { app.innerHTML = '<div class="card empty">Bitácora no encontrada</div>'; return; }
   b.ajustes ||= {}; b.excluidas ||= [];
@@ -684,14 +712,17 @@ function viewBitacora(param = '') {
   window.__bitOcupado = () => sucio || editando;
 
   app.innerHTML = `
-    <div class="head page-tools"><div><h1>${nueva ? 'Nueva bitácora' : 'Bitácora'}</h1><p class="sub">Los campos fijos salen del cliente y de la configuración; la firma y el # ID se diligencian solos.<br>📄 Se descarga como <b id="archivo"></b></p></div>
+    ${navBitacora(b.id || '')}
+    <div class="head page-tools"><div><h1>${nueva ? 'Nueva bitácora' : `Bitácora · ${esc(cliente(b.clienteId)?.paciente || '')}`}</h1><p class="sub">Los campos fijos salen del cliente y de la configuración; la firma y el # ID se diligencian solos.<br>📄 Se descarga como <b id="archivo"></b></p></div>
       <div class="row">${nueva ? '' : '<button class="btn danger" id="del">Eliminar</button>'}
         <span id="sucio" class="badge b-warn" hidden>Cambios sin guardar</span>
-        <button class="btn" id="save">Guardar</button><button class="btn primary" id="print">Imprimir / PDF</button></div></div>
+        <button class="btn" id="save">Guardar</button>${nueva ? '' : `<button class="btn" id="pdfTNA" title="Descarga el PDF con el nombre de entrega (TNA_…)">⬇ PDF</button>`}<button class="btn primary" id="print">Imprimir</button></div></div>
     <div class="grid2 page-tools">
       <div class="card"><h2>Datos</h2><div class="form">
         <label class="full">Cliente<select id="cli">${DB.clientes.map(c => `<option value="${c.id}" ${c.id === b.clienteId ? 'selected' : ''}>${esc(c.paciente)} — firma: ${esc(nombreFirmante(c) || 'sin definir')}</option>`).join('')}</select></label>
         <label>Mes de la bitácora<input type="month" id="per" value="${b.periodo}"></label>
+        <label>Código de tecnología<select id="cod">${codigos().map(k => `<option value="${esc(k.codigo)}" ${k.codigo === codigoDe(b) ? 'selected' : ''}>${esc(k.codigo)} · ${esc(k.descripcion.slice(0, 48))}</option>`).join('')}</select></label>
+        <label>PBS / NO PBS<select id="plan"><option value="">Sin marcar</option>${['PBS', 'NO PBS'].map(x => `<option ${b.plan === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
         <label>Firma en el documento<select id="modo">
           <option value="digital" ${b.modoFirma === 'digital' ? 'selected' : ''}>Automática (anexar firma del cliente)</option>
           <option value="escrita" ${b.modoFirma === 'escrita' ? 'selected' : ''}>A mano (imprimir en blanco)</option></select></label>
@@ -712,6 +743,7 @@ function viewBitacora(param = '') {
         <p class="muted" id="otros" style="font-size:12px;margin:10px 0 0" hidden></p>
       </div>
     </div>
+    <div class="card page-tools"><h2 style="margin-top:0">Revisión</h2><div id="alertas"></div></div>
     <div class="doc-tools page-tools">
       <button class="btn sm" id="editar">✏️ Editar documento</button>
       <button class="btn sm" id="reset" hidden>↺ Restablecer cambios</button>
@@ -723,12 +755,14 @@ function viewBitacora(param = '') {
   const marcarSucio = (v = true) => { sucio = v; $('#sucio').hidden = !v; };
   const nCambios = () => Object.values(b.ajustes).reduce((s, o) => s + Object.keys(o).length, 0) + b.excluidas.length;
   const pintarDoc = () => {
-    $('#docWrap').innerHTML = renderDoc(b, true, editando);
+    pintarDocAjustado($('#docWrap'), b, true, editando);
     const n = nCambios();
     $('#reset').hidden = !n; $('#reset').textContent = `↺ Restablecer cambios (${n})`;
   };
   const sync = () => {
-    b.clienteId = $('#cli').value; b.periodo = $('#per').value || mes; b.modoFirma = $('#modo').value;
+    const cAnt = b.clienteId; b.clienteId = $('#cli').value; b.periodo = $('#per').value || mes; b.modoFirma = $('#modo').value;
+    if (cAnt !== b.clienteId && cliente(b.clienteId)?.codigo) $('#cod').value = cliente(b.clienteId).codigo; // al cambiar de paciente, su código por defecto
+    b.codigo = $('#cod').value; b.plan = $('#plan').value;
     b.agendaFirma = $('#ag').value; b.estado = $('#est').value;
     b.fechas = [...new Set(b.fechas)].sort(); // se conservan también las de otros meses mientras navega
     const c = cliente(b.clienteId);
@@ -738,6 +772,7 @@ function viewBitacora(param = '') {
             : `<button class="btn sm primary" onclick="capturarFirma('${c.id}', window.__syncBit)">📎 Adjuntar ${faltantes(c).join(' y ')}</button>`}</div>`
       : '<small class="muted">Se imprime con FIRMA y # ID en blanco para que firmen a mano.</small>';
     renderCal(); pintarDoc();
+    $('#alertas').innerHTML = listaAlertas(validarBitacora(b));
     document.title = nombreArchivo(b); // así también funciona Ctrl+P y "Compartir → Imprimir" del celular
     $('#archivo').textContent = nombreArchivo(b) + '.pdf';
   };
@@ -766,7 +801,8 @@ function viewBitacora(param = '') {
     const lv = Array.from({ length: n }, (_, i) => `${b.periodo}-${String(i + 1).padStart(2, '0')}`).filter(d => { const w = new Date(d + 'T12:00').getDay(); return w > 0 && w < 6; });
     b.fechas = [...b.fechas.filter(f => !f.startsWith(b.periodo)), ...lv]; marcarSucio(); sync(); };
   $('#none').onclick = () => { b.fechas = b.fechas.filter(f => !f.startsWith(b.periodo)); marcarSucio(); sync(); };
-  ['#cli', '#per', '#modo', '#ag', '#est'].forEach(s => $(s).onchange = () => { marcarSucio(); sync(); });
+  ['#cli', '#per', '#modo', '#ag', '#est', '#cod', '#plan'].forEach(s => $(s).onchange = () => { marcarSucio(); sync(); });
+  $('#pdfTNA')?.addEventListener('click', async () => { if (sucio && !(await guardar())) return; descargarPDF(b); });
 
   // ----- Edición directa en el documento -----
   $('#editar').onclick = () => {
@@ -803,8 +839,8 @@ function viewBitacora(param = '') {
     if (!delMes.length) { toast('Selecciona al menos una fecha del mes ' + periodoTxt(b.periodo)); return false; }
     const otros = b.fechas.length - delMes.length;
     if (otros && !confirm(`Hay ${otros} fecha(s) marcadas en otros meses que NO se guardarán en esta bitácora de ${periodoTxt(b.periodo)}. ¿Continuar?`)) return false;
-    const dup = DB.bitacoras.find(x => x.clienteId === b.clienteId && x.periodo === b.periodo && x.id !== b.id);
-    if (dup && !confirm('Ya existe una bitácora de este cliente para ese mes. ¿Guardar otra?')) return false;
+    const dup = DB.bitacoras.find(x => x.clienteId === b.clienteId && x.periodo === b.periodo && x.id !== b.id && codigoDe(x) === b.codigo && (x.plan || '') === (b.plan || ''));
+    if (dup && !confirm('Ya existe una bitácora de este cliente para ese mes con el mismo código. ¿Guardar otra?')) return false;
     // solo se guardan fechas y correcciones del mes de la bitácora
     const claves = new Set(delMes.flatMap(f => [`${f}|ida`, `${f}|reg`]));
     const ajustes = Object.fromEntries(Object.entries(b.ajustes).filter(([k]) => claves.has(k)));
@@ -817,6 +853,11 @@ function viewBitacora(param = '') {
     marcarSucio(false); renderCal(); toast('Bitácora guardada'); return true;
   };
   $('#save').onclick = guardar;
+  // No perder cambios al pasar a otra bitácora o volver
+  $$('.nav-reg a[href], .nav-reg button').forEach(el => el.addEventListener('click', e => {
+    if (sucio && !confirm('Hay cambios sin guardar en esta bitácora. ¿Salir sin guardar?')) { e.preventDefault(); e.stopImmediatePropagation(); }
+    else { sucio = false; editando = false; } // ya confirmó: no volver a preguntar ni bloquear la recarga en vivo
+  }, true));
   $('#print').onclick = async () => {
     if (!(await guardar())) return;
     const c = cliente(b.clienteId);
@@ -833,11 +874,12 @@ function viewBitacora(param = '') {
 const fechasDe = b => (b.fechas || []).filter(f => f.startsWith(b.periodo)).sort();
 const CAMPOS_EDIT = ['dir', 'hora', 'ips', 'cod', 'desc', 'cant'];
 // Filas de la bitácora: base (cliente + campos fijos) + correcciones hechas en el documento
-function filas(b) {
-  const c = cliente(b.clienteId), cfg = DB.config, out = [], aj = b.ajustes || {}, ex = new Set(b.excluidas || []);
+function filas(b, c = cliente(b.clienteId)) {
+  const out = [], aj = b.ajustes || {}, ex = new Set(b.excluidas || []);
+  const cod = codigoDe(b, c), desc = descDe(b, c); // por bitácora → por cliente → global (ver lote.js)
   for (const f of fechasDe(b)) {
     const bases = [
-      { key: `${f}|ida`, tramo: 'ida', fecha: f, dir: c.origen, hora: hora12(c.horaIda), ips: c.ips, cod: cfg.codigo, desc: cfg.descripcion, cant: '1' },
+      { key: `${f}|ida`, tramo: 'ida', fecha: f, dir: c.origen, hora: hora12(c.horaIda), ips: c.ips, cod, desc, cant: '1' },
       { key: `${f}|reg`, tramo: 'reg', fecha: f, dir: c.ips, hora: hora12(c.horaRegreso), ips: c.regreso, cod: '', desc: '', cant: '' },
     ];
     for (const base of bases) out.push({ ...base, ...(aj[base.key] || {}), base, mod: aj[base.key] || {}, excl: ex.has(base.key) });
@@ -857,7 +899,23 @@ function anexoVariado(src, semilla, alt, { rot = 2, dy = 1, sc = [0.9, 1.04], po
   return `<div class="var"><span style="flex:${p.toFixed(3)}"></span><img src="${src}" alt="${alt}" style="transform:translateY(${mov.toFixed(2)}px) rotate(${giro.toFixed(2)}deg) scale(${esc_.toFixed(3)})"><span style="flex:${(1 - p).toFixed(3)}"></span></div>`;
 }
 
-function renderDoc(b, editable = false, edicion = false) {
+// Pinta la bitácora en "el" y ajusta las filas por hoja para que cada hoja quepa en una página carta horizontal
+// (área útil 10.5 × 8 in). Con direcciones largas las filas crecen; entonces se reparten menos filas por hoja.
+function pintarDocAjustado(el, b, editable = false, edicion = false) {
+  const LIM = 0.73; // alto/ancho máximo de la tabla (8 in − pie) / 10.5 in
+  let n = 23;
+  el.innerHTML = renderDoc(b, editable, edicion, n);
+  for (let i = 0; i < 6; i++) {
+    const ts = $$('.hoja table', el); if (!ts.length || !ts[0].offsetWidth) break; // no visible: no se puede medir
+    const peor = Math.max(...ts.map(t => t.offsetHeight / t.offsetWidth));
+    if (peor <= LIM || n <= 6) break;
+    n = Math.max(6, Math.min(n - 1, Math.floor(n * LIM / peor)));
+    el.innerHTML = renderDoc(b, editable, edicion, n);
+  }
+  return n;
+}
+
+function renderDoc(b, editable = false, edicion = false, POR_HOJA = 23) {
   const c = cliente(b.clienteId), cfg = DB.config;
   const auto = b.modoFirma === 'digital';
   const conFirma = auto && c.firma;
@@ -875,7 +933,6 @@ function renderDoc(b, editable = false, edicion = false) {
   const cols = [3.5, 6.5, 11, 7, 11.5, 6, 11.5, 7.5, 11, 4, 12, 8.5];
   // Paginación propia: cada hoja es una tabla completa (logo, título y encabezados) con 23 filas, como el formato original.
   // Así ningún navegador corta la tabla a mitad ni pierde los bordes del contorno al imprimir.
-  const POR_HOJA = 23;
   let item = 0;
   const filaHtml = (r, i) => `<tr class="${r.excl ? 'excl' : ''}">
       <td class="c-item">${r.excl ? '—' : ++item}${edicion ? (r.excl ? `<button class="row-btn" data-r="${r.key}" title="Restaurar fila">↺</button>` : `<button class="row-btn" data-x="${r.key}" title="Quitar fila">✕</button>`) : ''}</td>
@@ -929,6 +986,11 @@ async function agendar(id, fecha) { await api('PUT', 'bitacoras/' + id, { agenda
 async function marcar(id, estado) { await api('PUT', 'bitacoras/' + id, { estado }); toast(estado === 'firmado' ? 'Marcada como firmada' : 'Reabierta'); router(); }
 
 /* ================= Configuración (campos fijos) ================= */
+const usoCodigo = cod => DB.bitacoras.filter(b => codigoDe(b) === cod).length;
+const filaCodigo = k => `<tr><td><input name="codigo" value="${esc(k.codigo)}" placeholder="T340019709" required></td><td><input name="descripcion" value="${esc(k.descripcion)}" required></td>
+  <td>${usoCodigo(k.codigo)}</td><td><button type="button" class="btn sm danger" data-quitar aria-label="Quitar">✕</button></td></tr>`;
+const filaIps = i => `<tr><td><input name="nombre" value="${esc(i.nombre)}" required></td><td><input name="claves" value="${esc((i.claves || []).join(', '))}" placeholder="CISADDE, POPA" required></td>
+  <td>${DB.clientes.filter(c => ipsCanon(c.ips) === i.nombre).length}</td><td><button type="button" class="btn sm danger" data-quitar aria-label="Quitar">✕</button></td></tr>`;
 function viewConfig() {
   const c = DB.config, f = (k, l) => `<label class="${k === 'titulo' || k === 'descripcion' ? 'full' : ''}">${l}<input name="${k}" value="${esc(c[k])}"></label>`;
   // Espacio usado (plan gratuito de Supabase: base de datos 500 MB, archivos 1 GB)
@@ -942,9 +1004,19 @@ function viewConfig() {
   app.innerHTML = `
     <div class="head"><div><h1>Campos fijos</h1><p class="sub">Se repiten en todas las bitácoras. La ruta y horas de cada paciente están en su ficha de cliente.</p></div></div>
     <form class="card" id="fcfg"><div class="form">
-      ${f('empresa', 'Empresa')}${f('nit', 'NIT')}${f('eps', 'EPS')}${f('codigo', 'Código tecnología')}
-      ${f('titulo', 'Título del formato')}${f('descripcion', 'Descripción tecnología')}
+      ${f('empresa', 'Empresa')}${f('nit', 'NIT')}${f('eps', 'EPS')}${f('codigo', 'Código por defecto (si el cliente no tiene)')}
+      ${f('titulo', 'Título del formato')}${f('descripcion', 'Descripción por defecto (si el código no está en el catálogo)')}
     </div><div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn primary">Guardar</button></div></form>
+    <form class="card" id="fcods"><h2 style="margin-top:0">Catálogo de códigos de tecnología</h2>
+      <p class="muted" style="margin:0 0 10px">Cada bitácora usa su código y la descripción sale de aquí. Al importar PDF se reconoce el código automáticamente.</p>
+      <div class="tabla-scroll"><table class="list cat"><tr><th style="width:150px">Código</th><th>Descripción (como sale en la bitácora)</th><th style="width:70px">Uso</th><th></th></tr>
+        <tbody id="codRows">${codigos().map(k => filaCodigo(k)).join('')}</tbody></table></div>
+      <div class="row" style="justify-content:space-between;margin-top:10px"><button type="button" class="btn sm" id="addCod">+ Código</button><button class="btn primary">Guardar catálogo</button></div></form>
+    <form class="card" id="fipsCat"><h2 style="margin-top:0">Catálogo de IPS</h2>
+      <p class="muted" style="margin:0 0 10px">Agrupa las distintas formas en que se escribe una misma IPS (para filtros y reportes). <b>Palabras clave</b>: todas deben aparecer en la IPS del cliente; las más específicas van primero. No cambia lo que se imprime.</p>
+      <div class="tabla-scroll"><table class="list cat"><tr><th>Nombre</th><th>Palabras clave (separadas por coma)</th><th style="width:70px">Clientes</th><th></th></tr>
+        <tbody id="ipsRows">${ipsCatalogo().map(i => filaIps(i)).join('')}</tbody></table></div>
+      <div class="row" style="justify-content:space-between;margin-top:10px"><button type="button" class="btn sm" id="addIps">+ IPS</button><button class="btn primary">Guardar catálogo</button></div></form>
     <div class="card"><h2>Almacenamiento</h2>
       <p class="muted" style="margin:0 0 12px">Las firmas y los # ID se comprimen al adjuntarlos (WebP, máx. 600 px; original máx. 1400 px). Los PDF de las bitácoras no se guardan: se generan al imprimir.</p>
       <div class="esp"><div class="esp-top"><b>Firmas e # ID</b><span>${fmt(bytesArchivos)} de 1 GB</span></div>
@@ -955,6 +1027,21 @@ function viewConfig() {
       <small class="muted">Almacenamiento actual: <b>${esc(_info?.almacenamiento || 'archivo')}</b>${_info?.persistente === false ? ' (temporal)' : ''} · límites del plan gratuito de Supabase.</small>
     </div>`;
   $('#fcfg').onsubmit = async e => { e.preventDefault(); await api('PUT', 'config', Object.fromEntries(new FormData(e.target))); toast('Configuración guardada'); router(); };
+  const quitarFila = e => { const btn = e.target.closest('[data-quitar]'); if (btn) btn.closest('tr').outerHTML = ''; };
+  $('#codRows').onclick = quitarFila; $('#ipsRows').onclick = quitarFila;
+  $('#addCod').onclick = () => { $('#codRows').insertAdjacentHTML('beforeend', filaCodigo({ codigo: '', descripcion: '' })); $('#codRows tr:last-child input').focus(); };
+  $('#addIps').onclick = () => { $('#ipsRows').insertAdjacentHTML('beforeend', filaIps({ nombre: '', claves: [] })); $('#ipsRows tr:last-child input').focus(); };
+  $('#fcods').onsubmit = async e => {
+    e.preventDefault();
+    const lista = $$('#codRows tr').map(tr => ({ codigo: $('[name=codigo]', tr).value.trim().toUpperCase(), descripcion: $('[name=descripcion]', tr).value.trim().toUpperCase() })).filter(k => k.codigo);
+    const rep = lista.find((k, i) => lista.findIndex(x => x.codigo === k.codigo) !== i); if (rep) return toast('Código repetido: ' + rep.codigo);
+    await api('PUT', 'config', { codigos: lista }); toast('Catálogo de códigos guardado'); router();
+  };
+  $('#fipsCat').onsubmit = async e => {
+    e.preventDefault();
+    const lista = $$('#ipsRows tr').map(tr => ({ nombre: $('[name=nombre]', tr).value.trim(), claves: $('[name=claves]', tr).value.split(',').map(x => x.trim().toUpperCase()).filter(Boolean) })).filter(i => i.nombre && i.claves.length);
+    await api('PUT', 'config', { ipsCatalogo: lista }); toast('Catálogo de IPS guardado'); router();
+  };
 }
 
 /* ================= Tiempo real ================= */

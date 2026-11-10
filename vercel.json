@@ -29,7 +29,7 @@
       ]
     },
     {
-      "source": "/(index.html|app.js|firma.js|styles.css)?",
+      "source": "/(index.html|app.js|lote.js|firma.js|styles.css)?",
       "headers": [
         {
           "key": "Cache-Control",

@@ -475,3 +475,34 @@ a.pb-row[href]:hover { background: var(--bg); }
 @media (min-width: 900px) and (hover: hover) {
   .sb-auto .sidebar:not(:hover):not(:focus-within) .salir-btn span { opacity: 0; }
 }
+
+/* ---------- Lotes, revisión y paginación ---------- */
+.b-err { background: #FDECEF; color: #A3123A; }
+.tabla-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.alertas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.alertas li { padding: 6px 10px; border-radius: 8px; line-height: 1.35; }
+.alertas .al-error { background: #FDECEF; color: #8E0F33; }
+.alertas .al-aviso { background: #FFF4DE; color: #7A4B00; }
+.alertas .al-info { background: #F1EEF4; color: var(--muted); }
+details.al-det summary, .imp details summary { cursor: pointer; list-style: none; }
+details.al-det summary::-webkit-details-marker, .imp details summary::-webkit-details-marker { display: none; }
+details.al-det[open] .alertas, .imp details[open] .alertas { margin-top: 6px; min-width: 260px; max-width: 420px; }
+.list tr.grupo td { background: #F4EEF7; padding: 0; border-bottom: 1px solid var(--line); }
+.grupo-in { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 8px 12px; }
+.grupo-in b { text-transform: capitalize; font-size: 14px; color: var(--morado); }
+.grupo-in .btn { margin-left: auto; }
+.paginador { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; font-size: 13px; }
+.pg-btns { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.pg-btns .btn { min-width: 36px; padding: 6px 10px; }
+.list.cat input { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); }
+.list.imp td { vertical-align: top; }
+.list.bits td:nth-child(3) { text-align: center; }
+/* Lienzo fuera de pantalla para generar los PDF del lote (mismo diseño que la impresión) */
+.render-pdf { position: fixed; left: -12000px; top: 0; width: 10.5in; background: #fff; }
+.render-pdf .doc { width: 10.5in; }
+.render-pdf .doc .hoja { box-shadow: none; margin: 0 0 20px; }
+/* Navegación dentro de una bitácora */
+.nav-reg { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+.nav-reg .nav-pos { margin-left: auto; font-size: 12px; }
+.btn.disabled { opacity: .45; pointer-events: none; }
+@media print { .nav-reg { display: none !important; } }
