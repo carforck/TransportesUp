@@ -10,3 +10,6 @@ recursos/
 !.env.example
 scripts/
 supabase/
+# Servidor de desarrollo local (listen + fs.watch). En Vercel la API es api/index.js y public/ va por la CDN;
+# si server.js se sube, Vercel lo detecta como servidor y TODAS las rutas fallan (FUNCTION_INVOCATION_FAILED).
+server.js
