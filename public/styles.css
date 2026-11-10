@@ -576,3 +576,40 @@ button.pb-row:hover { background: var(--bg); }
 .pb-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip-total { background: #F3E6F7; border-color: #E2CDEB; }
 .chip-filtro { border-style: dashed; }
+/* ---------- Bitácora guiada por pasos ---------- */
+.pasos { display: flex; flex-direction: column; gap: 16px; margin-bottom: 18px; }
+.pasos .card { margin-bottom: 0; }
+.pasos-medio { gap: 16px; align-items: start; }
+.pasos-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.paso-head { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 14px; }
+.paso-head h2 { margin: 0; font-size: 17px; }
+.paso-ayuda { margin: 3px 0 0; font-size: 13px; color: var(--muted); line-height: 1.45; }
+.paso-n { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 14px;
+  background: #F3E6F7; color: var(--morado); transition: background .2s, color .2s; }
+.paso.listo .paso-n { background: var(--ok); color: #fff; font-size: 0; }
+.paso.listo .paso-n::after { content: "✓"; font-size: 15px; }
+.paso.bloq { opacity: .45; filter: grayscale(.4); }
+.paso.bloq .paso-head h2::after { content: " · elija primero el paciente"; font-size: 12px; font-weight: 500; color: var(--muted); }
+#paso1:not(.listo) { border-color: var(--morado); box-shadow: 0 0 0 3px #6E2A8E14; }
+.pac-busca { display: flex; gap: 8px; flex-wrap: wrap; }
+.pac-busca input { flex: 1 1 240px; min-width: 0; font: inherit; font-size: 16px; padding: 10px 12px; min-height: 46px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink); }
+.pac-busca input:focus { outline: 2px solid var(--morado); outline-offset: 1px; }
+.pac-cuenta { font-size: 12px; margin: 8px 0; }
+.pac-lista { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.pac-opc { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; text-align: left; font: inherit; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--card); color: var(--ink); cursor: pointer; min-width: 0; }
+.pac-opc b { font-size: 13px; overflow-wrap: anywhere; }
+.pac-opc small { color: var(--muted); font-size: 12px; }
+.pac-opc .badge { font-size: 11px; padding: 2px 8px; margin-top: 2px; }
+.pac-opc:hover, .pac-opc:focus-visible { border-color: var(--morado); background: #FBF8FC; outline: none; }
+.pac-elegido { display: flex; gap: 12px; flex-wrap: wrap; justify-content: space-between; align-items: center; padding: 12px; border-radius: 12px; background: #F8F3FA; border: 1px solid #EADCF0; }
+.pac-elegido > div:first-child { min-width: 0; flex: 1 1 260px; line-height: 1.5; }
+.cal-acc { justify-content: space-between; margin-bottom: 8px; }
+.cal button.fest { color: #B0123F; font-weight: 700; }
+.cal button.fest:not(.on) { background: #FDF1F4; }
+.paso-fin { justify-content: flex-end; margin-top: 12px; flex-wrap: wrap; }
+.doc-titulo { font-size: 16px; margin: 6px 0 10px; }
+.doc-vacio { padding: 40px 16px; text-align: center; color: var(--muted); background: #fff; border-radius: 12px; }
+@media (max-width: 699px) { .paso-fin .btn { flex: 1 1 auto; } }
+.cal button.fest.on { color: #fff; }
+.cal button.fest.on { box-shadow: inset 0 -4px 0 #FFC7D8; }

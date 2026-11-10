@@ -719,49 +719,65 @@ function viewBitacoras(param = '') {
 function viewBitacora(param = '') {
   const [id, qs] = param.split('?');
   const nueva = id === 'nueva';
-  if (nueva && !DB.clientes.length) { app.innerHTML = '<div class="card empty">Primero crea un cliente. <button class="btn primary" onclick="formCliente()">+ Cliente</button></div>'; return; }
   const pre = new URLSearchParams(qs || '').get('c');
   const mes = new URLSearchParams(qs || '').get('m') || hoy().slice(0, 7);
-  const b = nueva ? { clienteId: pre || DB.clientes[0].id, periodo: mes, fechas: [], modoFirma: 'digital', agendaFirma: '', estado: 'pendiente', plan: '' }
+  // Nueva: NO se preselecciona ningún paciente; se elige (o se crea) en el paso 1
+  const b = nueva ? { clienteId: pre && cliente(pre) ? pre : '', periodo: mes, fechas: [], modoFirma: 'digital', agendaFirma: '', estado: 'pendiente', plan: '' }
     : structuredClone(DB.bitacoras.find(x => x.id === id) || null);
   if (!b) { app.innerHTML = '<div class="card empty">Bitácora no encontrada</div>'; return; }
   b.ajustes ||= {}; b.excluidas ||= [];
   let editando = false, sucio = false;
   window.__bitOcupado = () => sucio || editando;
 
+  const paso = (n, titulo, ayuda, cuerpo, extra = '') => `
+    <section class="card paso" id="paso${n}" ${extra}>
+      <header class="paso-head"><span class="paso-n" aria-hidden="true">${n}</span>
+        <div><h2>${titulo}</h2><p class="paso-ayuda">${ayuda}</p></div></header>
+      ${cuerpo}
+    </section>`;
   app.innerHTML = `
     ${navBitacora(b.id || '')}
-    <div class="head page-tools"><div><h1>${nueva ? 'Nueva bitácora' : `Bitácora · ${esc(cliente(b.clienteId)?.paciente || '')}`}</h1><p class="sub">Los campos fijos salen del cliente y de la configuración; la firma y el # ID se diligencian solos.<br>📄 Se descarga como <b id="archivo"></b></p></div>
+    <div class="head page-tools"><div><h1>${nueva ? 'Nueva bitácora' : `Bitácora · ${esc(cliente(b.clienteId)?.paciente || '')}`}</h1>
+        <p class="sub">${nueva ? 'Siga los pasos. Ruta, horas y código salen del paciente: usted solo elige el paciente y marca los días.' : 'Cambie lo que necesite; el documento de abajo se actualiza al instante.'}
+        <span id="archivoLinea" hidden><br>📄 Se descarga como <b id="archivo"></b></span></p></div>
       <div class="row">${nueva ? '' : '<button class="btn danger" id="del">Eliminar</button>'}
-        <span id="sucio" class="badge b-warn" hidden>Cambios sin guardar</span>
-        <button class="btn" id="save">Guardar</button>${nueva ? '' : `<button class="btn" id="pdfTNA" title="Descarga el PDF con el nombre de entrega (TNA_…)">⬇ PDF</button>`}<button class="btn primary" id="print">Imprimir</button></div></div>
-    <div class="grid2 page-tools">
-      <div class="card"><h2>Datos</h2><div class="form">
-        <label class="full">Cliente<select id="cli">${DB.clientes.map(c => `<option value="${c.id}" ${c.id === b.clienteId ? 'selected' : ''}>${esc(c.paciente)} — firma: ${esc(nombreFirmante(c) || 'sin definir')}</option>`).join('')}</select></label>
-        <label>Mes de la bitácora<input type="month" id="per" value="${b.periodo}"></label>
-        <label>Código de tecnología<select id="cod">${codigos().map(k => `<option value="${esc(k.codigo)}" ${k.codigo === codigoDe(b) ? 'selected' : ''}>${esc(k.codigo)} · ${esc(k.descripcion.slice(0, 48))}</option>`).join('')}</select></label>
-        <label>PBS / NO PBS<select id="plan"><option value="">Sin marcar</option>${['PBS', 'NO PBS'].map(x => `<option ${b.plan === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
-        <label>Firma en el documento<select id="modo">
-          <option value="digital" ${b.modoFirma === 'digital' ? 'selected' : ''}>Automática (anexar firma del cliente)</option>
-          <option value="escrita" ${b.modoFirma === 'escrita' ? 'selected' : ''}>A mano (imprimir en blanco)</option></select></label>
-        <label>Agendar firma para<input type="date" id="ag" value="${b.agendaFirma || ''}"></label>
-        <label>Estado<select id="est"><option value="pendiente">Pendiente</option><option value="firmado" ${b.estado === 'firmado' ? 'selected' : ''}>Firmado</option></select></label>
-        <div class="full" id="firmaInfo"></div>
-      </div></div>
-      <div class="card">
-        <div class="row" style="justify-content:space-between"><h2 style="margin:0">Fechas de servicio <span id="nf" class="badge b-dig"></span></h2>
-          <div class="row"><button class="btn sm" id="hab" title="Marcar lunes a viernes del mes">Lun–Vie</button><button class="btn sm" id="none" title="Desmarcar todo el mes">Limpiar</button></div></div>
-        <div class="cal-nav">
-          <button class="icon-btn" id="prevM" aria-label="Mes anterior">‹</button>
-          <b id="mesLbl"></b>
-          <button class="icon-btn" id="nextM" aria-label="Mes siguiente">›</button>
-          <button class="btn sm" id="hoyM">Hoy</button>
+        <span id="sucio" class="badge b-warn" hidden>Cambios sin guardar</span></div></div>
+    <input type="hidden" id="cli" value="${esc(b.clienteId)}">
+    <div class="pasos page-tools">
+      ${paso(1, '¿Para qué paciente?', 'Busque por nombre o documento entre los pacientes registrados, o cree uno nuevo.', '<div id="pacSel"></div>')}
+      <div class="grid2 pasos-medio">
+        <div class="pasos-col">
+          ${paso(2, 'Mes y código', 'El código viene del paciente. Cámbielo solo si este mes el servicio es distinto.', `<div class="form">
+            <label>Mes de la bitácora<input type="month" id="per" value="${b.periodo}"></label>
+            <label>PBS / NO PBS<select id="plan"><option value="">Sin marcar</option>${['PBS', 'NO PBS'].map(x => `<option ${b.plan === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
+            <label class="full">Código de tecnología<select id="cod">${codigos().map(k => `<option value="${esc(k.codigo)}" ${k.codigo === codigoDe(b) ? 'selected' : ''}>${esc(k.codigo)} · ${esc(k.descripcion.slice(0, 60))}</option>`).join('')}</select></label></div>`)}
+          ${paso(4, 'Firma y # ID', 'Automática: se anexa la firma guardada del paciente en cada fila. A mano: sale en blanco para firmar en papel.', `<div class="form">
+            <label>Firma en el documento<select id="modo">
+              <option value="digital" ${b.modoFirma === 'digital' ? 'selected' : ''}>Automática</option>
+              <option value="escrita" ${b.modoFirma === 'escrita' ? 'selected' : ''}>A mano (en blanco)</option></select></label>
+            <label>Estado<select id="est"><option value="pendiente">Pendiente</option><option value="firmado" ${b.estado === 'firmado' ? 'selected' : ''}>Firmado</option></select></label>
+            <label>Agendar firma para <small class="muted">(opcional)</small><input type="date" id="ag" value="${b.agendaFirma || ''}"></label>
+            <div class="full" id="firmaInfo"></div></div>`)}
         </div>
-        <div class="cal" id="cal"></div>
-        <p class="muted" id="otros" style="font-size:12px;margin:10px 0 0" hidden></p>
+        ${paso(3, 'Marque los días del servicio', 'Toque cada día en que se hizo el viaje: cada día genera la fila de ida y la de regreso. <b>Lun–Vie</b> marca los días hábiles (sin festivos). Los festivos salen en rojo.', `
+          <div class="row cal-acc"><span id="nf" class="badge b-dig"></span>
+            <span class="row"><button class="btn sm" id="hab" title="Marcar lunes a viernes del mes (sin festivos)">Lun–Vie</button><button class="btn sm" id="none" title="Desmarcar todo el mes">Limpiar</button></span></div>
+          <div class="cal-nav">
+            <button class="icon-btn" id="prevM" aria-label="Mes anterior">‹</button>
+            <b id="mesLbl"></b>
+            <button class="icon-btn" id="nextM" aria-label="Mes siguiente">›</button>
+            <button class="btn sm" id="hoyM">Hoy</button>
+          </div>
+          <div class="cal" id="cal"></div>
+          <p class="muted" id="otros" style="font-size:12px;margin:10px 0 0" hidden></p>`)}
       </div>
+      ${paso(5, 'Revise y guarde', 'La app revisa festivos, horas y datos faltantes. Guarde, descargue el PDF o imprima.', `
+        <div id="alertas"></div>
+        <div class="row paso-fin"><button class="btn" id="save">Guardar</button>
+          <button class="btn" id="pdfTNA" title="Descarga el PDF con el nombre de entrega (TNA_…)">⬇ PDF</button>
+          <button class="btn primary" id="print">Imprimir</button></div>`)}
     </div>
-    <div class="card page-tools"><h2 style="margin-top:0">Revisión</h2><div id="alertas"></div></div>
+    <h2 class="doc-titulo page-tools" id="docTitulo">Vista previa del documento</h2>
     <div class="doc-tools page-tools">
       <button class="btn sm" id="editar">✏️ Editar documento</button>
       <button class="btn sm" id="reset" hidden>↺ Restablecer cambios</button>
@@ -770,13 +786,57 @@ function viewBitacora(param = '') {
     <p class="doc-hint page-tools">↔ Desliza para ver el documento completo</p>
     <div class="doc-wrap" id="docWrap"></div>`;
 
-  const marcarSucio = (v = true) => { sucio = v; $('#sucio').hidden = !v; };
+  const marcarSucio = (v = true) => { sucio = v; $('#sucio').hidden = !v; $('#paso5')?.classList.toggle('listo', !v && !!b.id); };
   const nCambios = () => Object.values(b.ajustes).reduce((s, o) => s + Object.keys(o).length, 0) + b.excluidas.length;
   const pintarDoc = () => {
     pintarDocAjustado($('#docWrap'), b, true, editando);
     const n = nCambios();
     $('#reset').hidden = !n; $('#reset').textContent = `↺ Restablecer cambios (${n})`;
   };
+  // ----- Paso 1: elegir paciente (buscador) o crear uno nuevo -----
+  let buscandoPac = !b.clienteId, filtroPac = '';
+  const elegirPaciente = id => { $('#cli').value = id; buscandoPac = false; marcarSucio(); sync(); $('#paso2')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); };
+  window.__elegirPac = elegirPaciente;
+  const pintarPaciente = () => {
+    const c = cliente(b.clienteId), cont = $('#pacSel');
+    if (c && !buscandoPac) {
+      cont.innerHTML = `<div class="pac-elegido">
+        <div><b>${esc(c.paciente)}</b> <small class="muted">CC ${esc(c.docPaciente)}</small><br>
+          <small>${esc(ipsCanon(c.ips))} · ${esc(c.origen)} · ${hora12(c.horaIda)} / ${hora12(c.horaRegreso)}</small><br>
+          <small class="muted">Firma: ${esc(nombreFirmante(c) || 'sin definir')}${docFirmante(c) ? ' · CC ' + esc(docFirmante(c)) : ''}</small></div>
+        <div class="row"><button type="button" class="btn sm" id="editPac">✏️ Editar datos</button><button type="button" class="btn sm" id="cambiarPac">Cambiar paciente</button></div></div>`;
+      $('#cambiarPac').onclick = () => { buscandoPac = true; pintarPaciente(); $('#buscaPac')?.focus(); };
+      $('#editPac').onclick = () => formCliente(c.id, {}, () => { pintarPaciente(); sync(); });
+      return;
+    }
+    const q = sinTildes(filtroPac);
+    const todos = [...DB.clientes].sort((x, y) => x.paciente.localeCompare(y.paciente));
+    const lista = todos.filter(x => !q || sinTildes(`${x.paciente} ${x.docPaciente} ${x.acudiente}`).includes(q));
+    cont.innerHTML = `
+      <div class="pac-busca"><input id="buscaPac" type="search" placeholder="Escriba el nombre o el documento…" value="${esc(filtroPac)}" aria-label="Buscar paciente" autocomplete="off">
+        <button type="button" class="btn primary" id="nuevoPac">+ Paciente nuevo</button></div>
+      <p class="muted pac-cuenta">${todos.length ? `${lista.length === todos.length ? `${todos.length} pacientes registrados` : `${lista.length} de ${todos.length}`} · toque uno para elegirlo` : 'Aún no hay pacientes: cree el primero.'}</p>
+      <div class="pac-lista" role="listbox" aria-label="Pacientes">${lista.slice(0, 8).map(x => `
+        <button type="button" class="pac-opc" role="option" data-cid="${x.id}">
+          <b>${esc(x.paciente)}</b><small>CC ${esc(x.docPaciente)} · ${esc(ipsCanon(x.ips))}</small>
+          ${anexosCompletos(x) ? '<span class="badge b-ok">Firma e ID</span>' : '<span class="badge b-warn">Falta firma o ID</span>'}</button>`).join('')}
+        ${lista.length > 8 ? `<p class="muted" style="margin:4px 0 0;font-size:12px">… y ${lista.length - 8} más. Siga escribiendo para afinar la búsqueda.</p>` : ''}
+        ${todos.length && !lista.length ? '<p class="muted" style="margin:4px 0 0">Ningún paciente coincide. ¿Es nuevo? Créelo con el botón de arriba.</p>' : ''}</div>
+      ${c ? '<button type="button" class="btn sm" id="cancelPac">Cancelar</button>' : ''}`;
+    const inp = $('#buscaPac');
+    inp.oninput = () => { filtroPac = inp.value; const pos = inp.selectionStart; pintarPaciente(); const n = $('#buscaPac'); n.focus(); n.setSelectionRange(pos, pos); };
+    inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); const p1 = $('.pac-opc'); if (p1) elegirPaciente(p1.dataset.cid); } };
+    $$('.pac-opc', cont).forEach(x => x.onclick = () => elegirPaciente(x.dataset.cid));
+    $('#nuevoPac').onclick = () => formCliente(null, filtroPac && !/\d{5,}/.test(filtroPac) ? { paciente: filtroPac.toUpperCase() } : {}, saved => elegirPaciente(saved.id));
+    $('#cancelPac')?.addEventListener('click', () => { buscandoPac = false; pintarPaciente(); });
+  };
+  // Marca cada paso como listo (✓) o bloqueado mientras no hay paciente
+  const marcarPasos = c => {
+    const listo = { 1: !!c, 2: !!(c && b.periodo && b.codigo), 3: fechasDe(b).length > 0,
+      4: !!c && (b.modoFirma === 'escrita' || anexosCompletos(c)), 5: !!b.id && !sucio };
+    for (const n of [1, 2, 3, 4, 5]) { const s = $('#paso' + n); s.classList.toggle('listo', listo[n]); s.classList.toggle('bloq', n > 1 && !c); s.inert = n > 1 && !c; }
+  };
+
   const sync = () => {
     const cAnt = b.clienteId; b.clienteId = $('#cli').value; b.periodo = $('#per').value || mes; b.modoFirma = $('#modo').value;
     if (cAnt !== b.clienteId && cliente(b.clienteId)?.codigo) $('#cod').value = cliente(b.clienteId).codigo; // al cambiar de paciente, su código por defecto
@@ -784,6 +844,16 @@ function viewBitacora(param = '') {
     b.agendaFirma = $('#ag').value; b.estado = $('#est').value;
     b.fechas = [...new Set(b.fechas)].sort(); // se conservan también las de otros meses mientras navega
     const c = cliente(b.clienteId);
+    pintarPaciente(); marcarPasos(c);
+    $('#archivoLinea').hidden = !c;
+    if (!c) { // sin paciente: nada que previsualizar todavía
+      renderCal();
+      $('#firmaInfo').innerHTML = ''; $('#alertas').innerHTML = '<p class="muted" style="margin:0">Elija el paciente para continuar.</p>';
+      $('#docWrap').innerHTML = '<div class="doc-vacio">La vista previa aparece cuando elija el paciente.</div>';
+      $$('.doc-tools, .doc-hint, #docTitulo').forEach(x => x.hidden = true);
+      document.title = TITULO_APP; return;
+    }
+    $$('.doc-tools, .doc-hint, #docTitulo').forEach(x => x.hidden = false);
     $('#firmaInfo').innerHTML = b.modoFirma === 'digital'
       ? `<div class="row">${miniAnexos(c)} <small class="muted">${esc(nombreFirmante(c))} · CC ${esc(docFirmante(c))}</small>
           ${anexosCompletos(c) ? `<button class="btn sm" onclick="capturarFirma('${c.id}', window.__syncBit)">Cambiar</button>`
@@ -803,7 +873,8 @@ function viewBitacora(param = '') {
     $('#nf').textContent = `${delMes.length} días · ${delMes.length * 2} filas`;
     $('#cal').innerHTML = ['L', 'M', 'X', 'J', 'V', 'S', 'D'].map(d => `<div class="dow">${d}</div>`).join('') + '<div></div>'.repeat(off) +
       Array.from({ length: n }, (_, i) => { const iso = `${b.periodo}-${String(i + 1).padStart(2, '0')}`, wd = (off + i) % 7;
-        return `<button data-d="${iso}" class="${b.fechas.includes(iso) ? 'on' : ''} ${wd > 4 ? 'we' : ''} ${iso === hoyIso ? 'hoy' : ''}" title="${iso === hoyIso ? 'Hoy' : ''}">${i + 1}</button>`; }).join('');
+        const fe = festivo(iso);
+        return `<button data-d="${iso}" class="${b.fechas.includes(iso) ? 'on' : ''} ${wd > 4 ? 'we' : ''} ${fe ? 'fest' : ''} ${iso === hoyIso ? 'hoy' : ''}" title="${fe ? 'Festivo: ' + fe : iso === hoyIso ? 'Hoy' : ''}" aria-pressed="${b.fechas.includes(iso)}">${i + 1}</button>`; }).join('');
     const otros = b.fechas.filter(f => !f.startsWith(b.periodo));
     const meses = [...new Set(otros.map(f => f.slice(0, 7)))];
     $('#otros').hidden = !otros.length;
@@ -816,11 +887,11 @@ function viewBitacora(param = '') {
   $('#hoyM').onclick = () => { $('#per').value = hoy().slice(0, 7); sync(); };
   $('#cal').onclick = e => { const d = e.target.dataset.d; if (!d) return; b.fechas = b.fechas.includes(d) ? b.fechas.filter(x => x !== d) : [...b.fechas, d]; marcarSucio(); sync(); };
   $('#hab').onclick = () => { const [y, m] = b.periodo.split('-').map(Number), n = new Date(y, m, 0).getDate();
-    const lv = Array.from({ length: n }, (_, i) => `${b.periodo}-${String(i + 1).padStart(2, '0')}`).filter(d => { const w = new Date(d + 'T12:00').getDay(); return w > 0 && w < 6; });
+    const lv = Array.from({ length: n }, (_, i) => `${b.periodo}-${String(i + 1).padStart(2, '0')}`).filter(d => { const w = new Date(d + 'T12:00').getDay(); return w > 0 && w < 6 && !festivo(d); }); // hábiles, sin festivos
     b.fechas = [...b.fechas.filter(f => !f.startsWith(b.periodo)), ...lv]; marcarSucio(); sync(); };
   $('#none').onclick = () => { b.fechas = b.fechas.filter(f => !f.startsWith(b.periodo)); marcarSucio(); sync(); };
   ['#cli', '#per', '#modo', '#ag', '#est', '#cod', '#plan'].forEach(s => $(s).onchange = () => { marcarSucio(); sync(); });
-  $('#pdfTNA')?.addEventListener('click', async () => { if (sucio && !(await guardar())) return; descargarPDF(b); });
+  $('#pdfTNA')?.addEventListener('click', async () => { if ((sucio || !b.id) && !(await guardar())) return; descargarPDF(b); });
 
   // ----- Edición directa en el documento -----
   $('#editar').onclick = () => {
@@ -853,8 +924,9 @@ function viewBitacora(param = '') {
   });
 
   const guardar = async () => {
+    if (!cliente(b.clienteId)) { toast('Primero elija el paciente (paso 1)'); $('#buscaPac')?.focus(); return false; }
     const delMes = fechasDe(b);
-    if (!delMes.length) { toast('Selecciona al menos una fecha del mes ' + periodoTxt(b.periodo)); return false; }
+    if (!delMes.length) { toast('Marque al menos un día de ' + periodoTxt(b.periodo) + ' (paso 3)'); $('#paso3')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); return false; }
     const otros = b.fechas.length - delMes.length;
     if (otros && !confirm(`Hay ${otros} fecha(s) marcadas en otros meses que NO se guardarán en esta bitácora de ${periodoTxt(b.periodo)}. ¿Continuar?`)) return false;
     const dup = DB.bitacoras.find(x => x.clienteId === b.clienteId && x.periodo === b.periodo && x.id !== b.id && codigoDe(x) === b.codigo && (x.plan || '') === (b.plan || ''));
