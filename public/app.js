@@ -1042,21 +1042,54 @@ const ACCESO = {
           <div class="login-lema"><b>Cartagena de Indias</b><span id="loginLugar">${esc(fotos[0].lugar)}</span></div>
         </div>
         <a class="login-credito" href="https://commons.wikimedia.org/wiki/Category:Quality_images_of_Cartagena,_Colombia" target="_blank" rel="noopener">Fotos: Bernard Gagnon · CC BY-SA 4.0</a>
+        <div class="login-col">
         <form class="login-box" id="loginForm" autocomplete="on">
           <img src="/logo.png" alt="Transportes UP" class="login-logo">
           <h1 id="loginTit">Bitácoras de servicio</h1>
           <p class="login-sub">Ingrese para ver y gestionar la información.</p>
           ${sinConfig ? `<p class="login-err">${esc(aviso)}</p>` : ''}
           <label>Usuario<input name="usuario" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
-          <label>Contraseña
-            <span class="login-pass"><input name="clave" type="password" autocomplete="current-password" required>
-            <button type="button" class="login-ver" aria-label="Mostrar contraseña" title="Mostrar contraseña">👁</button></span></label>
+          <label for="loginClave">Contraseña</label>
+          <span class="login-pass">
+            <input id="loginClave" name="clave" type="password" autocomplete="current-password" required aria-describedby="loginMayus">
+            <button type="button" class="login-ver" aria-label="Mostrar contraseña" aria-pressed="false" title="Mostrar contraseña">
+              <svg class="ojo-abierto" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg class="ojo-cerrado" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.6 5.1A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-2.9 3.9M6.6 6.6C3.7 8.4 2 12 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>
+            </button>
+          </span>
+          <p class="login-mayus" id="loginMayus" hidden>⇪ Bloq Mayús está activado</p>
           <p class="login-err" id="loginErr" role="alert" hidden></p>
           <button class="btn primary" type="submit" ${sinConfig ? 'disabled' : ''}>Ingresar</button>
         </form>
+        <footer class="login-soporte">
+          <span class="ls-tit">¿Problemas para ingresar? Soporte técnico</span>
+          <b>Carlos Carranza</b> <span class="ls-rol">· Vanttage Tech</span>
+          <span class="ls-links">
+            <a href="https://wa.me/573105080356?text=${encodeURIComponent('Hola Carlos, necesito soporte con la app de bitácoras de Transportes UP.')}" target="_blank" rel="noopener">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.7 14.9L2 22l5.2-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3.1.8.8-3-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.7.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.3-.4.7-1.4a.5.5 0 0 0 0-.5l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.4.8 3.2.7a2.8 2.8 0 0 0 1.8-1.3 2.3 2.3 0 0 0 .2-1.3c-.1-.1-.3-.2-.5-.3z"/></svg>
+              +57 310 508 0356</a>
+            <a href="mailto:carforck@gmail.com?subject=${encodeURIComponent('Soporte · Bitácoras Transportes UP')}">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 6l9 7 9-7" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+              carforck@gmail.com</a>
+            <a href="https://vanttagetech.com" target="_blank" rel="noopener">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+              vanttagetech.com</a>
+          </span>
+        </footer>
+        </div>
       </div>`);
     const f = $('#loginForm'), err = $('#loginErr');
-    $('.login-ver', f).onclick = e => { const i = f.clave; i.type = i.type === 'password' ? 'text' : 'password'; e.currentTarget.setAttribute('aria-label', i.type === 'password' ? 'Mostrar contraseña' : 'Ocultar contraseña'); };
+    $('.login-ver', f).onclick = e => {
+      const i = f.clave, b = e.currentTarget, ver = i.type === 'password';
+      const [a, z] = [i.selectionStart, i.selectionEnd];
+      i.type = ver ? 'text' : 'password';
+      b.setAttribute('aria-pressed', ver); b.classList.toggle('on', ver);
+      b.setAttribute('aria-label', ver ? 'Ocultar contraseña' : 'Mostrar contraseña'); b.title = b.getAttribute('aria-label');
+      i.focus(); try { i.setSelectionRange(a, z); } catch {}
+    };
+    const mayus = e => { if (e.getModifierState) $('#loginMayus').hidden = !e.getModifierState('CapsLock'); };
+    f.clave.addEventListener('keydown', mayus); f.clave.addEventListener('keyup', mayus);
+    f.clave.addEventListener('blur', () => $('#loginMayus').hidden = true);
     f.onsubmit = async e => {
       e.preventDefault();
       const b = $('button[type=submit]', f); b.disabled = true; b.textContent = 'Ingresando…'; err.hidden = true;
