@@ -1040,7 +1040,7 @@ const ACCESO = {
           ${fotos.map((f, i) => `<div class="login-foto${i === 0 ? ' on' : ''}" data-src="/img/login/${f.archivo}" ${i === 0 ? `style="background-image:url('/img/login/${f.archivo}')"` : ''}></div>`).join('')}
           <div class="login-velo"></div>
           <div class="login-lema">
-            <span class="ll-eti">Transporte especial · Salud Total EPS</span>
+            <span class="ll-eti">Transporte especial · Cartagena</span>
             <b>Bitácoras de servicio, sin papeleo</b>
             <p>Registre los servicios de cada paciente, anexe su firma y su documento una sola vez, y genere la bitácora mensual lista para imprimir o enviar en PDF.</p>
             <ul>
