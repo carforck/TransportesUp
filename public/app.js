@@ -35,6 +35,7 @@ async function api(method, url, body) {
   const r = await fetch('/api/' + url, { method, headers: { 'Content-Type': 'application/json', 'X-Cliente': CLIENTE_ID }, body: body ? JSON.stringify(body) : undefined });
   const out = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(out.error || r.statusText);
+  const v = r.headers.get('X-Version'); if (v) VIVO.version = +v; // mi propio cambio: el sondeo no debe tomarlo como ajeno
   return out;
 }
 async function reload() { DB = await api('GET', 'db'); $('#nit').textContent = DB.config.nit; }
@@ -71,20 +72,145 @@ async function router() {
 window.addEventListener('hashchange', () => { router(); window.scrollTo(0, 0); });
 
 /* ================= Dashboard ================= */
-function viewDashboard() {
-  const mes = mesPorDefecto();
-  const bitsMes = DB.bitacoras.filter(b => b.periodo === mes);
-  const servMes = bitsMes.reduce((s, b) => s + fechasDe(b).length, 0);
-  const servTotal = DB.bitacoras.reduce((s, b) => s + fechasDe(b).length, 0);
-  const pacMes = new Set(bitsMes.map(b => b.clienteId)).size;
-  const completos = DB.clientes.filter(anexosCompletos).length;
-  const pct = DB.clientes.length ? Math.round(completos / DB.clientes.length * 100) : 0;
+/* ================= Dashboard ================= */
+// Paleta validada (dataviz validate_palette.js --ordinal, superficie #fff): un solo tono de la marca.
+const VIZ = { real: '#6E2A8E', prog: '#B98ACF', calor: ['#F4EEF7', '#C7A0D9', '#9A5BB8', '#6E2A8E'], grid: '#EEE9F1', eje: '#6F6577', tinta: '#241B2B', sup: '#FFFFFF' };
+const sumaMes = (m, fn) => DB.bitacoras.filter(b => b.periodo === m).reduce((s, b) => s + fn(b), 0);
+const mesMas = (m, d) => { const [y, mm] = m.split('-').map(Number), x = new Date(y, mm - 1 + d, 1); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}`; };
+const mesCorto = m => { const [y, mm] = m.split('-'); return MESES[+mm - 1].slice(0, 3); };
+const nfmt = n => n.toLocaleString('es-CO');
+
+// Datos de un mes: realizado (fecha ≤ hoy), programado (fecha futura), pacientes atendidos
+function datosMes(m) {
+  const h = hoy(); let real = 0, prog = 0; const pac = new Set();
+  for (const b of DB.bitacoras.filter(b => b.periodo === m)) {
+    const fs = fechasDe(b); if (fs.length) pac.add(b.clienteId);
+    for (const f of fs) f <= h ? real++ : prog++;
+  }
+  return { m, real, prog, total: real + prog, pac: pac.size };
+}
+// Proyección: promedio de servicios de los 3 meses anteriores al mes proyectado
+const proyeccion = m => { const prev = [1, 2, 3].map(d => datosMes(mesMas(m, -d)).total); return Math.round(prev.reduce((a, b) => a + b, 0) / 3); };
+
+/* ---- Tooltip compartido (texto con textContent: los nombres son datos) ---- */
+function tip() { let t = $('#viztip'); if (!t) { t = document.createElement('div'); t.id = 'viztip'; t.className = 'viz-tip'; t.setAttribute('role', 'tooltip'); t.hidden = true; document.body.appendChild(t); } return t; }
+function mostrarTip(ev, filas) {
+  const t = tip(); t.replaceChildren();
+  for (const [valor, etiqueta, color] of filas) {
+    const r = document.createElement('div'); r.className = 'viz-tip-row';
+    if (color) { const k = document.createElement('i'); k.style.background = color; r.appendChild(k); }
+    const v = document.createElement('b'); v.textContent = valor; r.appendChild(v);
+    if (etiqueta) { const l = document.createElement('span'); l.textContent = etiqueta; r.appendChild(l); }
+    t.appendChild(r);
+  }
+  t.hidden = false;
+  const rect = ev.target.getBoundingClientRect?.(), x = ev.clientX ?? (rect.left + rect.width / 2), y = ev.clientY ?? rect.top;
+  const w = t.offsetWidth, hgt = t.offsetHeight;
+  t.style.left = Math.min(window.innerWidth - w - 8, Math.max(8, x - w / 2)) + 'px';
+  t.style.top = (y - hgt - 12 < 8 ? y + 18 : y - hgt - 12) + 'px';
+}
+const ocultarTip = () => { const t = $('#viztip'); if (t) t.hidden = true; };
+function conectarTips(raiz, datos) {
+  raiz.querySelectorAll('[data-tip]').forEach(el => {
+    const f = ev => mostrarTip(ev, datos[el.dataset.tip]);
+    el.addEventListener('pointermove', f); el.addEventListener('focus', f);
+    el.addEventListener('pointerleave', ocultarTip); el.addEventListener('blur', ocultarTip);
+  });
+}
+
+/* ---- Gráfico 1: servicios por mes (histórico + proyección) ---- */
+function graficoMeses(el, meses, sel, alClic) {
+  const W = Math.max(300, el.clientWidth), H = 230, m = { t: 26, r: 8, b: 30, l: 34 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b, n = meses.length, banda = iw / n, bw = Math.min(24, banda * 0.55);
+  const maxV = Math.max(4, ...meses.map(d => Math.max(d.total, d.proy || 0)));
+  const paso = maxV <= 8 ? 2 : maxV <= 20 ? 5 : maxV <= 50 ? 10 : maxV <= 100 ? 20 : 50, top = Math.ceil(maxV / paso) * paso;
+  const y = v => m.t + ih - (v / top) * ih;
+  const col = (x, y0, y1, r) => { const h = y0 - y1; if (h <= 0) return ''; r = Math.min(r, h, bw / 2);
+    return `M${x},${y0} V${y1 + r} Q${x},${y1} ${x + r},${y1} H${x + bw - r} Q${x + bw},${y1} ${x + bw},${y1 + r} V${y0} Z`; };
+  const sq = (x, y0, y1) => y0 - y1 > 0 ? `M${x},${y0} V${y1} H${x + bw} V${y0} Z` : '';
+  let g = '';
+  for (let v = 0; v <= top; v += paso) g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="${VIZ.grid}" stroke-width="1"/><text x="${m.l - 6}" y="${y(v) + 4}" text-anchor="end" class="viz-ax">${v}</text>`;
+  const datos = {}; let marcas = '';
+  meses.forEach((d, i) => {
+    const cx = m.l + banda * i + banda / 2, x = cx - bw / 2, base = y(0), esSel = d.m === sel;
+    if (esSel) marcas += `<rect x="${m.l + banda * i + 2}" y="${m.t - 18}" width="${banda - 4}" height="${ih + 18}" rx="8" fill="#F7EEFA"/>`;
+    const yR = y(d.real), yP = y(d.total), gap = d.real && d.prog ? 2 : 0;
+    // realizado abajo (cuadrado en la base, redondeado arriba si no hay programado encima)
+    if (d.real) marcas += `<path d="${d.prog ? sq(x, base, yR) : col(x, base, yR, 4)}" fill="${VIZ.real}"/>`;
+    if (d.prog) marcas += `<path d="${col(x, d.real ? yR - gap : base, yP - gap, 4)}" fill="${VIZ.prog}"/>`;
+    if (d.proy > d.total) { // proyección: lo que falta para el promedio, rayado
+      const y0 = d.total ? yP - 2 - (d.prog ? 2 : 0) : base;
+      marcas += `<path d="${col(x, y0, y(d.proy), 4)}" fill="url(#rayas)"/>`;
+    }
+    const etiqueta = d.proy > d.total ? `~${d.proy}` : (d.total ? d.total : '');
+    if (etiqueta !== '' && (esSel || d.proy > d.total || i === n - 2 || d.total === Math.max(...meses.map(z => z.total))))
+      marcas += `<text x="${cx}" y="${y(Math.max(d.total, d.proy || 0)) - 6}" text-anchor="middle" class="viz-val">${etiqueta}</text>`;
+    const anio = d.m.slice(0, 4), mostrarAnio = i === 0 || d.m.endsWith('-01');
+    marcas += `<text x="${cx}" y="${H - 12}" text-anchor="middle" class="viz-ax ${esSel ? 'viz-sel' : ''}">${mesCorto(d.m)}</text>`;
+    if (mostrarAnio) marcas += `<text x="${cx}" y="${H - 1}" text-anchor="middle" class="viz-ax viz-anio">${anio}</text>`;
+    datos[d.m] = [[`${nfmt(d.total)} servicios`, periodoTxt(d.m)], ...(d.real ? [[nfmt(d.real), 'realizados', VIZ.real]] : []),
+      ...(d.prog ? [[nfmt(d.prog), 'programados', VIZ.prog]] : []), ...(d.proy > d.total ? [[`~${d.proy}`, 'proyección (promedio 3 meses)', VIZ.real]] : []),
+      [`${d.pac}`, d.pac === 1 ? 'paciente' : 'pacientes']];
+    marcas += `<rect x="${m.l + banda * i}" y="${m.t - 18}" width="${banda}" height="${ih + 18 + m.b}" fill="transparent" data-tip="${d.m}" data-m="${d.m}" tabindex="0" role="button" aria-label="${periodoTxt(d.m)}: ${d.total} servicios" class="viz-hit"/>`;
+  });
+  el.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Servicios por mes, histórico y proyección">
+    <defs><pattern id="rayas" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#F3E9F8"/><line x1="0" y1="0" x2="0" y2="6" stroke="${VIZ.real}" stroke-width="2"/></pattern></defs>
+    ${g}${marcas}<line x1="${m.l}" x2="${W - m.r}" y1="${y(0)}" y2="${y(0)}" stroke="#D9D0E0" stroke-width="1"/></svg>`;
+  conectarTips(el, datos);
+  el.querySelectorAll('[data-m]').forEach(r => { r.onclick = () => alClic(r.dataset.m); r.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); alClic(r.dataset.m); } }; });
+}
+
+/* ---- Gráfico 2: actividad diaria del mes (calendario de calor) ---- */
+function calorMes(m) {
+  const [y, mm] = m.split('-').map(Number), n = new Date(y, mm, 0).getDate(), off = (new Date(y, mm - 1, 1).getDay() + 6) % 7, h = hoy();
+  const porDia = {};
+  for (const b of DB.bitacoras.filter(b => b.periodo === m)) for (const f of fechasDe(b)) (porDia[f] ||= []).push(cliente(b.clienteId)?.paciente || '—');
+  const datos = {}; let celdas = ['L', 'M', 'X', 'J', 'V', 'S', 'D'].map(d => `<div class="hm-dow">${d}</div>`).join('') + '<div></div>'.repeat(off);
+  for (let d = 1; d <= n; d++) {
+    const f = `${m}-${String(d).padStart(2, '0')}`, lista = porDia[f] || [], k = Math.min(3, lista.length);
+    const dia = DIAS[new Date(f + 'T12:00').getDay()];
+    datos[f] = [[lista.length ? `${lista.length} ${lista.length === 1 ? 'paciente' : 'pacientes'}` : 'Sin servicio', `${dia} ${d} de ${MESES[mm - 1]}`],
+      ...lista.slice(0, 6).map(nm => ['•', nm]), ...(lista.length > 6 ? [[`+${lista.length - 6}`, 'más']] : [])];
+    celdas += `<div class="hm-c ${k >= 2 ? 'osc' : ''} ${f === h ? 'hoy' : ''} ${f > h && lista.length ? 'fut' : ''}" style="background:${VIZ.calor[k]}" data-tip="${f}" tabindex="0" aria-label="${d}: ${lista.length} servicios">${d}</div>`;
+  }
+  return { html: `<div class="hm">${celdas}</div>`, datos, porDia };
+}
+
+/* ---- Gráfico 3: servicios por paciente en el mes (barras ordenadas) ---- */
+function barrasPacientes(m) {
+  const filas = DB.bitacoras.filter(b => b.periodo === m).map(b => ({ c: cliente(b.clienteId), n: fechasDe(b).length })).filter(x => x.c && x.n)
+    .reduce((acc, x) => { const e = acc.find(a => a.c.id === x.c.id); e ? e.n += x.n : acc.push(x); return acc; }, []).sort((a, b) => b.n - a.n);
+  const top = filas.slice(0, 8), resto = filas.slice(8), max = Math.max(1, ...filas.map(f => f.n));
+  if (resto.length) top.push({ c: { id: '', paciente: `Otros (${resto.length})` }, n: resto.reduce((s, f) => s + f.n, 0) });
+  return { filas: top, html: top.map(f => `
+    <a class="pb-row" ${f.c.id ? `href="#/registros?m=${m}&c=${f.c.id}"` : ''} title="${esc(f.c.paciente)}">
+      <span class="pb-name">${esc(f.c.paciente)}</span>
+      <span class="pb-track"><span class="pb-bar" style="width:${(f.n / max * 100).toFixed(1)}%"></span></span>
+      <span class="pb-val">${f.n}</span></a>`).join('') };
+}
+
+function viewDashboard(param = '') {
+  const q = new URLSearchParams((param.split('?')[1]) || '');
+  const actual = hoy().slice(0, 7);
+  const mes = q.get('m') || mesPorDefecto();
+  const rango = +(q.get('r') || 6);
+  const ir = cambios => { const n = new URLSearchParams({ m: mes, r: rango, ...cambios }); location.hash = '#/?' + n; };
+  window.__dashIr = ir;
+
+  // Meses del histórico: termina en el mes siguiente al actual (proyección) o al seleccionado si es posterior
+  const fin = [mesMas(actual, 1), mes].sort().pop();
+  const primeroDatos = mesesConDatos().slice(-1)[0];
+  let n = rango === 0 ? 12 : rango;
+  if (rango === 0 && primeroDatos) { let k = 1, x = fin; while (x > primeroDatos && k < 36) { x = mesMas(x, -1); k++; } n = Math.max(6, k); }
+  const meses = Array.from({ length: n }, (_, i) => mesMas(fin, i - n + 1)).map(m => {
+    const d = datosMes(m); if (m > actual) d.proy = proyeccion(m); return d; });
+
+  const dSel = datosMes(mes), dAnt = datosMes(mesMas(mes, -1));
+  const delta = dSel.total - dAnt.total;
+  const completos = DB.clientes.filter(anexosCompletos).length, pct = DB.clientes.length ? Math.round(completos / DB.clientes.length * 100) : 0;
   const pendientes = DB.bitacoras.filter(b => b.estado !== 'firmado' && estadoFirma(b).cls === 'b-warn');
   const sinAnexos = DB.clientes.filter(c => !anexosCompletos(c));
   const proximas = DB.bitacoras.filter(b => b.agendaFirma && b.estado !== 'firmado').sort((a, b) => a.agendaFirma.localeCompare(b.agendaFirma));
-  const porMes = mesesConDatos().slice(0, 6).map(m => { const bs = DB.bitacoras.filter(b => b.periodo === m);
-    return { m, serv: bs.reduce((s, b) => s + fechasDe(b).length, 0), pac: new Set(bs.map(b => b.clienteId)).size,
-      ok: bs.filter(b => estadoFirma(b).cls === 'b-ok').length, total: bs.length }; });
   const ahora = new Date();
   const fechaHoy = `${['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'][ahora.getDay()]} ${ahora.getDate()} de ${MESES[ahora.getMonth()]} de ${ahora.getFullYear()}`;
   const ICON = {
@@ -98,6 +224,10 @@ function viewDashboard() {
       <div class="kpi-top"><span class="kpi-ico"><svg viewBox="0 0 24 24">${ICON[icon]}</svg></span><span class="kpi-go" aria-hidden="true">→</span></div>
       <div class="lbl">${lbl}</div><div class="val">${val}</div><div class="hint">${hint}</div>${extra}
     </a>`;
+  const deltaTxt = dAnt.total || dSel.total
+    ? `<span class="delta ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}">${delta > 0 ? '▲' : delta < 0 ? '▼' : '='} ${delta > 0 ? '+' : ''}${delta}</span> vs ${mesCorto(mesMas(mes, -1))}` : 'sin datos del mes anterior';
+  const calor = calorMes(mes), pb = barrasPacientes(mes);
+  const opMeses = [...new Set([...mesesConDatos(), actual, mesMas(actual, 1), mes])].sort().reverse();
 
   app.innerHTML = `
     <div class="head dash-head"><div><h1>Hola 👋</h1><p class="sub" style="text-transform:none">${fechaHoy} · ${esc(DB.config.eps)}</p></div>
@@ -105,41 +235,73 @@ function viewDashboard() {
         <button class="btn" onclick="importarFormato()" title="Sube una bitácora PDF ya hecha: se leen el paciente y las fechas">⬆ Importar PDF</button>
         <a class="btn primary" href="#/bitacora/nueva?m=${mes}">+ Nueva bitácora</a></div></div>
 
+    <div class="dash-filtros" role="group" aria-label="Filtros del dashboard">
+      <div class="mes-pick"><button class="icon-btn" id="dPrev" aria-label="Mes anterior">‹</button>
+        <select id="dMes" aria-label="Mes">${opMeses.map(x => `<option value="${x}" ${x === mes ? 'selected' : ''}>${periodoTxt(x)}${x === actual ? ' (actual)' : ''}</option>`).join('')}</select>
+        <button class="icon-btn" id="dNext" aria-label="Mes siguiente">›</button></div>
+      <div class="seg" role="radiogroup" aria-label="Histórico">${[[6, '6 meses'], [12, '12 meses'], [0, 'Todo']].map(([v, t]) => `<button role="radio" aria-checked="${rango === v}" class="${rango === v ? 'on' : ''}" data-r="${v}">${t}</button>`).join('')}</div>
+    </div>
+
     <div class="kpis">
-      ${kpi({ href: '#/clientes', icon: 'cli', lbl: 'Clientes', val: DB.clientes.length, hint: `${completos} con firma e ID · ${sinAnexos.length} pendientes`,
-        extra: `<div class="meter" role="img" aria-label="${pct}% con anexos completos"><span style="width:${pct}%"></span></div><div class="hint">${pct}% con anexos completos</div>` })}
-      ${kpi({ href: '#/bitacoras', icon: 'bit', lbl: 'Bitácoras', val: DB.bitacoras.length, hint: `${bitsMes.length} de ${periodoTxt(mes)}` })}
-      ${kpi({ href: `#/registros?m=${mes}`, icon: 'reg', lbl: `Servicios · ${periodoTxt(mes)}`, val: servMes, hint: `${pacMes} paciente${pacMes === 1 ? '' : 's'} · ${servMes * 2} filas · ${servTotal} en total` })}
+      ${kpi({ href: `#/registros?m=${mes}`, icon: 'reg', lbl: `Servicios · ${periodoTxt(mes)}`, val: nfmt(dSel.total), hint: `${deltaTxt}<br>${dSel.real} realizados · ${dSel.prog} programados` })}
+      ${kpi({ href: `#/registros?m=${mes}`, icon: 'cli', lbl: 'Pacientes atendidos', val: dSel.pac, hint: `${DB.clientes.length} cliente${DB.clientes.length === 1 ? '' : 's'} registrado${DB.clientes.length === 1 ? '' : 's'}` })}
+      ${kpi({ href: '#/clientes', icon: 'bit', lbl: 'Anexos completos', val: pct + '%', hint: `${completos} de ${DB.clientes.length} con firma e ID`,
+        extra: `<div class="meter" role="img" aria-label="${pct}% con anexos completos"><span style="width:${pct}%"></span></div>` })}
       ${kpi({ href: '#/agenda', icon: 'age', lbl: 'Firmas pendientes', val: pendientes.length, tono: pendientes.length ? 'warn' : 'ok',
         hint: pendientes.length ? `${proximas.length} agendada${proximas.length === 1 ? '' : 's'}` : 'Todo al día ✓' })}
     </div>
 
-    ${resumenMes()}
+    <div class="card">
+      <div class="pac-head"><div><h2>Servicios por mes</h2><small class="muted">Histórico y proyección · toque un mes para verlo en detalle</small></div>
+        <div class="viz-leg"><span><i style="background:${VIZ.real}"></i>Realizados</span><span><i style="background:${VIZ.prog}"></i>Programados</span><span><i class="rayas"></i>Proyección</span></div></div>
+      <div id="gMeses" class="viz"></div>
+      <p class="viz-nota">Realizados: fechas hasta hoy · Programados: fechas marcadas que aún no llegan · Proyección (~): promedio de servicios de los 3 meses anteriores; es una estimación, no un dato registrado.</p>
+      <details class="viz-tabla"><summary>Ver como tabla</summary>
+        <table class="list"><tr><th>Mes</th><th>Realizados</th><th>Programados</th><th>Total</th><th>Proyección</th><th>Pacientes</th></tr>
+        ${meses.map(d => `<tr><td>${periodoTxt(d.m)}</td><td>${d.real}</td><td>${d.prog}</td><td><b>${d.total}</b></td><td>${d.proy != null ? '~' + d.proy : '—'}</td><td>${d.pac}</td></tr>`).join('')}</table></details>
+    </div>
 
     <div class="grid2">
-      <div>
-        <div class="card"><div class="pac-head"><h2>Servicios por mes</h2><a class="btn sm" href="#/registros?m=todos">Ver todos →</a></div>
-          ${porMes.length ? `<table class="list"><tr><th>Mes</th><th>Servicios</th><th>Pacientes</th><th>Bitácoras listas</th><th></th></tr>
-            ${porMes.map(x => `<tr class="click" onclick="location.hash='#/registros?m=${x.m}'"><td><b style="text-transform:capitalize">${periodoTxt(x.m)}</b></td>
-              <td>${x.serv} servicios</td><td>${x.pac} paciente${x.pac === 1 ? '' : 's'}</td>
-              <td><span class="badge ${x.ok === x.total ? 'b-ok' : 'b-warn'}">${x.ok} de ${x.total}</span></td><td class="solo-escritorio" style="text-align:right"><span class="muted">→</span></td></tr>`).join('')}</table>`
-            : '<div class="empty">Aún no hay servicios registrados</div>'}
-        </div>
+      <div class="card">
+        <div class="pac-head"><div><h2>Actividad diaria · ${periodoTxt(mes)}</h2><small class="muted">Pacientes con servicio cada día</small></div>
+          <div class="viz-leg">${['0', '1', '2', '3+'].map((t, i) => `<span><i style="background:${VIZ.calor[i]}"></i>${t}</span>`).join('')}</div></div>
+        ${calor.html}
+        <details class="viz-tabla"><summary>Ver como tabla</summary>
+          ${Object.keys(calor.porDia).length ? `<table class="list"><tr><th>Fecha</th><th>Pacientes</th></tr>${Object.entries(calor.porDia).sort().map(([f, l]) => `<tr><td>${fechaDoc(f)}</td><td>${l.length} · ${l.map(esc).join(', ')}</td></tr>`).join('')}</table>` : '<div class="empty">Sin servicios en el mes</div>'}</details>
       </div>
-      <div>
-        <div class="card"><div class="pac-head"><h2>Anexos pendientes</h2><a class="btn sm" href="#/clientes">Clientes →</a></div>
-          ${sinAnexos.length ? `<table class="list">${sinAnexos.map(c => `<tr><td>${esc(nombreFirmante(c) || c.paciente)}<br><small class="muted">${esPaciente(c) ? 'Paciente' : 'Acudiente de ' + esc(c.paciente)} · falta ${faltantes(c).join(' y ')}</small></td>
-            <td style="text-align:right;white-space:nowrap"><button class="btn sm primary" onclick="capturarFirma('${c.id}')">📎 Adjuntar</button></td></tr>`).join('')}</table>`
-            : '<div class="empty">Todos los clientes tienen firma e ID ✓</div>'}
-        </div>
-        <div class="card"><div class="pac-head"><h2>Próximas firmas agendadas</h2><a class="btn sm" href="#/agenda">Agenda →</a></div>
-          ${proximas.length ? `<table class="list">${proximas.slice(0, 6).map(b => { const c = cliente(b.clienteId); return `
-            <tr class="click" onclick="location.hash='#/bitacora/${b.id}'"><td><b>${fechaLarga(b.agendaFirma)}</b></td>
-            <td>${esc(nombreFirmante(c) || '—')}<br><small class="muted">${esc(c?.paciente || '')} · ${periodoTxt(b.periodo)}</small></td><td>${modoBadge(b)}</td></tr>`; }).join('')}</table>`
-            : '<div class="empty">No hay firmas agendadas</div>'}
-        </div>
+      <div class="card">
+        <div class="pac-head"><div><h2>Servicios por paciente</h2><small class="muted">${periodoTxt(mes)} · de mayor a menor</small></div><a class="btn sm" href="#/registros?m=${mes}">Registros →</a></div>
+        ${pb.filas.length ? `<div class="pb">${pb.html}</div>` : '<div class="empty">Sin servicios en el mes</div>'}
+      </div>
+    </div>
+
+    ${resumenMes(mes)}
+
+    <div class="grid2">
+      <div class="card"><div class="pac-head"><h2>Anexos pendientes</h2><a class="btn sm" href="#/clientes">Clientes →</a></div>
+        ${sinAnexos.length ? `<table class="list">${sinAnexos.map(c => `<tr><td>${esc(nombreFirmante(c) || c.paciente)}<br><small class="muted">${esPaciente(c) ? 'Paciente' : 'Acudiente de ' + esc(c.paciente)} · falta ${faltantes(c).join(' y ')}</small></td>
+          <td style="text-align:right;white-space:nowrap"><button class="btn sm primary" onclick="capturarFirma('${c.id}')">📎 Adjuntar</button></td></tr>`).join('')}</table>`
+          : '<div class="empty">Todos los clientes tienen firma e ID ✓</div>'}
+      </div>
+      <div class="card"><div class="pac-head"><h2>Próximas firmas agendadas</h2><a class="btn sm" href="#/agenda">Agenda →</a></div>
+        ${proximas.length ? `<table class="list">${proximas.slice(0, 6).map(b => { const c = cliente(b.clienteId); return `
+          <tr class="click" onclick="location.hash='#/bitacora/${b.id}'"><td><b>${fechaLarga(b.agendaFirma)}</b></td>
+          <td>${esc(nombreFirmante(c) || '—')}<br><small class="muted">${esc(c?.paciente || '')} · ${periodoTxt(b.periodo)}</small></td><td>${modoBadge(b)}</td></tr>`; }).join('')}</table>`
+          : '<div class="empty">No hay firmas agendadas</div>'}
       </div>
     </div>`;
+
+  const pintar = () => graficoMeses($('#gMeses'), meses, mes, m => ir({ m }));
+  pintar();
+  conectarTips(app.querySelector('.hm'), calor.datos);
+  $('#dMes').onchange = e => ir({ m: e.target.value });
+  $('#dPrev').onclick = () => ir({ m: mesMas(mes, -1) });
+  $('#dNext').onclick = () => ir({ m: mesMas(mes, 1) });
+  app.querySelectorAll('.seg [data-r]').forEach(bt => bt.onclick = () => ir({ r: bt.dataset.r }));
+  // redibuja el gráfico al cambiar el ancho (rotar celular, abrir/cerrar menú fijo)
+  window.__dashRO?.disconnect();
+  window.__dashRO = new ResizeObserver(() => { if ($('#gMeses')) pintar(); });
+  window.__dashRO.observe($('#gMeses'));
 }
 
 function tablaBitacoras(list, acciones = false) {
@@ -387,8 +549,7 @@ const mesesConDatos = () => [...new Set(DB.bitacoras.map(b => b.periodo))].sort(
 const mesPorDefecto = () => { const m = hoy().slice(0, 7), todos = mesesConDatos(); return todos.includes(m) ? m : (todos[0] || m); };
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 
-function resumenMes() {
-  const mes = mesPorDefecto();
+function resumenMes(mes = mesPorDefecto()) {
   const bits = DB.bitacoras.filter(b => b.periodo === mes);
   if (!bits.length) return '';
   return `<div class="card"><div class="pac-head"><h2>Registros de ${periodoTxt(mes)}</h2><a class="btn sm" href="#/registros?m=${mes}">Ver lista completa →</a></div>
@@ -802,16 +963,40 @@ const VIVO = {
     VIVO.refrescar();
   },
   estado(on) { const el = $('#vivo'); if (el) { el.innerHTML = on ? '<i>●</i><b>En vivo</b>' : '<i>○</i><b>Reconectando…</b>'; el.classList.toggle('off', !on); el.title = on ? 'Sincronizado en tiempo real' : 'Reconectando…'; } },
-  conectar() {
+  version: 0,
+  async conectar() {
+    let info = { tiempoReal: 'sse', persistente: true };
+    try { info = await (await fetch('/api/info')).json(); } catch {}
+    VIVO.info = info;
+    if (!info.persistente) { const d = $('#demo'); if (d) d.hidden = false; }
+    if (info.tiempoReal === 'sse') return VIVO.sse();
+    VIVO.sondeo();
+  },
+  // Local: conexión abierta (Server-Sent Events)
+  sse() {
     const es = new EventSource('/api/eventos');
     let primera = true;
     es.addEventListener('hola', () => { VIVO.estado(true); if (!primera) { VIVO.pendiente = true; VIVO.intentar(); } primera = false; }); // al reconectar, sincroniza
     es.addEventListener('datos', e => {
-      const d = JSON.parse(e.data);
+      const d = JSON.parse(e.data); VIVO.version = d.version;
       if (d.origen === CLIENTE_ID) return; // cambio hecho por esta misma pestaña: ya está pintado
       VIVO.pendiente = true; VIVO.intentar();
     });
     es.onerror = () => VIVO.estado(false);
+  },
+  // Vercel / serverless: consulta liviana de la versión cada 5 s mientras la pestaña está visible
+  sondeo() {
+    const revisar = async () => {
+      if (document.hidden) return;
+      try {
+        const { version } = await (await fetch('/api/version', { cache: 'no-store' })).json();
+        VIVO.estado(true);
+        if (!VIVO.version) VIVO.version = version;
+        else if (version !== VIVO.version) { VIVO.version = version; VIVO.pendiente = true; VIVO.intentar(); }
+      } catch { VIVO.estado(false); }
+    };
+    revisar(); setInterval(revisar, 5000);
+    document.addEventListener('visibilitychange', revisar);
   },
 };
 $('#liveBtn').onclick = () => { if (window.__bitOcupado?.() && !confirm('Tiene cambios sin guardar en esta bitácora. ¿Descartarlos y cargar los datos nuevos?')) return; VIVO.refrescar(); };

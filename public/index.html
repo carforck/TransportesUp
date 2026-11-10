@@ -56,6 +56,7 @@
   <main id="app"></main>
   <div id="modal" class="modal no-print" hidden role="dialog" aria-modal="true"></div>
   <div id="toast" class="toast no-print" hidden role="status" aria-live="polite"></div>
+  <div id="demo" class="demo-banner no-print" hidden role="status">⚠️ <b>Modo demostración</b>: este despliegue aún no tiene almacenamiento permanente; los datos y firmas se pueden perder.</div>
   <div id="live" class="live-banner no-print" hidden role="status">🔄 Otra persona actualizó la información <button class="btn sm primary" id="liveBtn">Actualizar</button></div>
 
   <script src="/firma.js"></script>
@@ -86,6 +87,7 @@
     // Recarga en vivo: el servidor avisa cuando cambia algo en /public
     (function () {
       if (location.search.includes('noreload')) return;
+      if (!/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(location.hostname)) return; // solo en desarrollo local
       const es = new EventSource('/__reload');
       es.onmessage = e => { if (e.data === 'reload') location.reload(); };
     })();

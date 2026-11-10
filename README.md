@@ -81,7 +81,13 @@ Pensada para correr en un computador de la oficina y usarse desde cualquier celu
 
 ```
 TransporUp/
-├── server.js          # Servidor HTTP (Node ≥ 20, solo módulos nativos)
+├── server.js          # Servidor LOCAL: sirve public/ y usa lib/app.js (tiempo real por SSE)
+├── api/index.js       # Función de Vercel: la misma lógica de lib/app.js (tiempo real por sondeo)
+├── lib/
+│   ├── app.js         # API REST, anexos (firma / # ID) y tiempo real, sin servidor propio
+│   └── store.js       # Almacenamiento intercambiable (hoy: archivos; mañana: nube)
+├── vercel.json        # Salida estática = public/, reescrituras /api/* y /firmas/* → api/index
+├── .vercelignore      # Impide subir data/ y PDFs reales en un despliegue
 ├── package.json       # Scripts: dev (con recarga) y start
 ├── public/            # Frontend: SPA en JavaScript puro
 │   ├── index.html     # Estructura, menú lateral colapsable, recarga en vivo
@@ -94,9 +100,10 @@ TransporUp/
     └── firmas/        # Firmas e # ID: versión limpia (PNG) + original (JPG)
 ```
 
-### Backend (`server.js`)
+### Backend (`lib/app.js` + `lib/store.js`)
 
-- `http` nativo de Node. Sirve los archivos estáticos y una **API REST JSON**:
+- La lógica es un **manejador único** (`handler(req, res)`) que no depende del servidor. Lo usan `server.js` (local) y `api/index.js` (Vercel).
+- Expone una **API REST JSON**:
 
   | Método | Ruta | Uso |
   |---|---|---|
@@ -104,10 +111,13 @@ TransporUp/
   | GET / PUT | `/api/config` | Campos fijos |
   | GET / POST | `/api/clientes`, `/api/bitacoras` | Listar / crear |
   | GET / PUT / DELETE | `/api/clientes/:id`, `/api/bitacoras/:id` | Leer / actualizar / eliminar |
-  | GET | `/api/eventos` | Canal de tiempo real (SSE) |
+  | GET | `/api/info` | Entorno, modo de tiempo real (`sse` / `sondeo`) y si el almacenamiento es persistente |
+  | GET | `/api/version` | Versión de los datos (para el sondeo en serverless) |
+  | GET | `/api/eventos` | Canal de tiempo real SSE (solo local) |
   | GET | `/firmas/:archivo` | Imágenes de firma e # ID |
 
-- **Persistencia**: `data/db.json`, con escritura atómica (archivo temporal y luego `rename`).
+- **Persistencia** (`lib/store.js`): una interfaz asíncrona (`leer`, `guardar`, `guardarArchivo`, `leerArchivo`, `borrarArchivo`). El driver actual guarda en `data/db.json` con escritura atómica (temporal + `rename`) y en `data/firmas/`. `DATA_DIR` permite usar otra carpeta.
+- **Versión de datos**: cada escritura incrementa `db.version` y la devuelve en la cabecera `X-Version`.
 - **Anexos**: llegan como `data:` URL. El servidor valida el tipo (PNG, JPG, WEBP o SVG), el tamaño (máx. 2 MB la versión limpia y 8 MB el original) y que no estén vacíos. Luego los guarda en `data/firmas/` y la base guarda solo la ruta. Al reemplazar o eliminar un anexo o un cliente, se borran sus archivos.
 - **Recarga en desarrollo**: `node --watch` reinicia el servidor y un SSE (`/__reload`) recarga el navegador cuando cambia algo en `public/`.
 
@@ -155,6 +165,26 @@ npm start          # uso normal
 - Puerto distinto: `PORT=8080 npm start`.
 
 En la primera ejecución se crea `data/db.json` con **datos de ejemplo ficticios**.
+
+## Despliegue en Vercel (preparado)
+
+El proyecto ya está estructurado para que el despliegue pase sin errores:
+
+| Pieza | Cómo queda en Vercel |
+|---|---|
+| `public/` | Archivos estáticos servidos por la CDN (`outputDirectory`). No hay paso de build. |
+| `api/index.js` | Función Node.js (Fluid Compute) que atiende `/api/*` y `/firmas/*` mediante las reescrituras de `vercel.json`. |
+| Tiempo real | El navegador consulta `/api/version` cada 5 s. En serverless las instancias no comparten memoria, así que no se usa SSE. |
+| Datos | Sin almacenamiento configurado, la app arranca en **modo demostración** (`/tmp`, temporal) y lo avisa en pantalla. **Nunca falla por disco de solo lectura.** |
+| Seguridad | `.vercelignore` impide subir `data/` y los PDF reales. |
+
+**Antes de usarla en producción en Vercel falta:**
+
+1. **Almacenamiento permanente**: implementar en `lib/store.js` un driver en la nube con la misma interfaz. Por ejemplo, una base del Marketplace de Vercel (Postgres o Redis) para `db.json` y **Vercel Blob privado** para las firmas. El resto de la app no cambia.
+2. **Autenticación**: la app no tiene usuarios. En internet es obligatorio protegerla, por ejemplo con Vercel Authentication o un inicio de sesión propio.
+3. Elegir la cuenta o el equipo de Vercel y conectar el repositorio.
+
+La simulación local de Vercel (estáticos + reescrituras + función con `VERCEL=1`) se probó: API, anexos, modo demostración y sondeo funcionando.
 
 ## Privacidad y respaldo
 

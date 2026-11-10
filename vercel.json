@@ -1,0 +1,17 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "outputDirectory": "public",
+  "rewrites": [
+    { "source": "/api/:ruta*", "destination": "/api/index?ruta=/api/:ruta*" },
+    { "source": "/firmas/:archivo", "destination": "/api/index?ruta=/firmas/:archivo" }
+  ],
+  "headers": [
+    { "source": "/(.*)", "headers": [
+      { "key": "X-Content-Type-Options", "value": "nosniff" },
+      { "key": "Referrer-Policy", "value": "same-origin" }
+    ] },
+    { "source": "/(index.html|app.js|firma.js|styles.css)?", "headers": [
+      { "key": "Cache-Control", "value": "no-cache" }
+    ] }
+  ]
+}

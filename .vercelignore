@@ -1,0 +1,8 @@
+# Nunca subir datos reales a un despliegue (datos de salud, cédulas y firmas)
+data/
+docs_originales/
+logos_originales/
+recursos/
+*.pdf
+*.log
+.vscode/
