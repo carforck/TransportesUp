@@ -1037,7 +1037,8 @@ const ACCESO = {
     document.body.insertAdjacentHTML('beforeend', `
       <div id="login" class="login" role="dialog" aria-modal="true" aria-labelledby="loginTit">
         <div class="login-fotos" aria-hidden="true">
-          ${fotos.map((f, i) => `<div class="login-foto${i === 0 ? ' on' : ''}" data-src="/img/login/${f.archivo}" ${i === 0 ? `style="background-image:url('/img/login/${f.archivo}')"` : ''}></div>`).join('')}
+          ${fotos.map((f, i) => `<div class="login-foto${i === 0 ? ' on' : ''}" data-src="/img/login/${f.archivo}" style="background-position:${f.pos || 'center'}${i === 0 ? `;background-image:url('/img/login/${f.archivo}')` : ''}">${f.video
+            ? `<video muted playsinline loop preload="none" data-src="/img/login/${f.video}" style="object-position:${f.pos || 'center'}"></video>` : ''}</div>`).join('')}
           <div class="login-velo"></div>
           <div class="login-lema">
             <span class="ll-eti">Transporte especial · Cartagena</span>
@@ -1109,20 +1110,41 @@ const ACCESO = {
       } catch (x) { err.textContent = x.message; err.hidden = false; b.disabled = false; b.textContent = 'Ingresar'; f.clave.select(); }
     };
     if (matchMedia('(hover: hover)').matches) setTimeout(() => f.usuario.focus(), 50); // en celular no abre el teclado solo
-    // Carrusel de fondo: carga las demás fotos después de la primera y las alterna con fundido
+    // Carrusel de fondo: carga las demás imágenes después de la primera y las alterna con fundido.
+    // El video solo se descarga cuando le llega el turno (y nunca con "ahorro de datos").
     const capas = $$('.login-foto');
+    const ahorro = navigator.connection?.saveData;
     setTimeout(() => capas.forEach(c => { if (!c.style.backgroundImage) c.style.backgroundImage = `url('${c.dataset.src}')`; }), 1200);
     if (capas.length > 1 && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
       let i = 0;
-      ACCESO.timer = setInterval(() => {
-        if (document.hidden) return;
-        capas[i].classList.remove('on'); i = (i + 1) % capas.length; capas[i].classList.add('on');
-      }, 7000);
+      const siguiente = () => {
+        if (!$('#login')) return;
+        if (document.hidden) { ACCESO.timer = setTimeout(siguiente, 2000); return; }
+        const antes = capas[i]; antes.classList.toggle('on', false);
+        const va = $('video', antes); if (va) setTimeout(() => va.pause(), 1700);
+        i = (i + 1) % capas.length; const c = capas[i]; c.classList.add('on');
+        const v = $('video', c);
+        if (v && !ahorro) {
+          if (!v.getAttribute('src')) v.src = v.dataset.src;
+          v.currentTime = 0;
+          v.play().then(() => c.classList.add('reproduciendo')).catch(() => {});
+        }
+        ACCESO.timer = setTimeout(siguiente, v && !ahorro ? 12000 : 7000);
+      };
+      ACCESO.timer = setTimeout(siguiente, 7000);
     }
   },
   // Fotos del panel de acceso (public/img/login/). Vacío = degradado de la marca.
   // Usar SOLO fotos propias de Transportes UP o con licencia que no exija crédito visible.
-  FOTOS: [],
+  FOTOS: [ // fotos propias de Transportes UP Cartagena (perfil de la empresa en Google Maps)
+    { archivo: 'flota-noche.webp', pos: '35% 60%' },
+    { archivo: 'abordaje.webp', pos: '50% 40%' },
+    // Video de dron: Pexels (licencia libre, sin atribución obligatoria) · pexels.com/video/3940084
+    { archivo: 'cartagena-dron.webp', video: 'cartagena-dron.mp4', pos: '30% 50%' },
+    { archivo: 'vans-murallas.webp', pos: '40% 70%' },
+    { archivo: 'interior.webp', pos: '50% 50%' },
+    { archivo: 'oficina.webp', pos: '12% 50%' },
+  ],
   async salir() {
     if (!confirm('¿Cerrar la sesión en este dispositivo?')) return;
     await fetch('/api/logout', { method: 'POST' }).catch(() => {});

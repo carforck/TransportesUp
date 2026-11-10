@@ -411,6 +411,8 @@ a.pb-row[href]:hover { background: var(--bg); }
 .login-fotos { position: relative; flex: none; min-height: 260px; overflow: hidden; background: radial-gradient(circle at 85% 15%, rgba(255,255,255,.14), transparent 45%), linear-gradient(135deg, #5B1F78, #C2187A); color: #fff; display: flex; align-items: flex-end; }
 .login-foto { position: absolute; inset: 0; background: center / cover no-repeat; opacity: 0; transform: scale(1.04); transition: opacity 1.6s ease, transform 9s ease-out; }
 .login-foto.on { opacity: 1; transform: scale(1.12); }
+.login-foto video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .6s; }
+.login-foto.reproduciendo video { opacity: 1; }
 .login-velo { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(42, 12, 54, .25), rgba(42, 12, 54, .85)); }
 @media (prefers-reduced-motion: reduce) { .login-foto, .login-foto.on { transition: none; transform: none; } }
 .login-lema { position: relative; z-index: 1; padding: 28px 20px 22px; max-width: 560px; text-shadow: 0 1px 10px rgba(0, 0, 0, .35); }
