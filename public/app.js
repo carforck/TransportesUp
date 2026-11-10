@@ -72,34 +72,68 @@ window.addEventListener('hashchange', () => { router(); window.scrollTo(0, 0); }
 
 /* ================= Dashboard ================= */
 function viewDashboard() {
-  const mesActual = hoy().slice(0, 7);
-  const servicios = DB.bitacoras.reduce((s, b) => s + b.fechas.length, 0);
-  const delMes = DB.bitacoras.filter(b => b.periodo === mesActual);
-  const pendientes = DB.bitacoras.filter(b => estadoFirma(b).cls === 'b-warn');
-  const sinFirma = DB.clientes.filter(c => !anexosCompletos(c));
+  const mes = mesPorDefecto();
+  const bitsMes = DB.bitacoras.filter(b => b.periodo === mes);
+  const servMes = bitsMes.reduce((s, b) => s + fechasDe(b).length, 0);
+  const servTotal = DB.bitacoras.reduce((s, b) => s + fechasDe(b).length, 0);
+  const pacMes = new Set(bitsMes.map(b => b.clienteId)).size;
+  const completos = DB.clientes.filter(anexosCompletos).length;
+  const pct = DB.clientes.length ? Math.round(completos / DB.clientes.length * 100) : 0;
+  const pendientes = DB.bitacoras.filter(b => b.estado !== 'firmado' && estadoFirma(b).cls === 'b-warn');
+  const sinAnexos = DB.clientes.filter(c => !anexosCompletos(c));
   const proximas = DB.bitacoras.filter(b => b.agendaFirma && b.estado !== 'firmado').sort((a, b) => a.agendaFirma.localeCompare(b.agendaFirma));
-  const recientes = [...DB.bitacoras].sort((a, b) => b.periodo.localeCompare(a.periodo)).slice(0, 8);
+  const porMes = mesesConDatos().slice(0, 6).map(m => { const bs = DB.bitacoras.filter(b => b.periodo === m);
+    return { m, serv: bs.reduce((s, b) => s + fechasDe(b).length, 0), pac: new Set(bs.map(b => b.clienteId)).size,
+      ok: bs.filter(b => estadoFirma(b).cls === 'b-ok').length, total: bs.length }; });
+  const ahora = new Date();
+  const fechaHoy = `${['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'][ahora.getDay()]} ${ahora.getDate()} de ${MESES[ahora.getMonth()]} de ${ahora.getFullYear()}`;
+  const ICON = {
+    cli: '<path d="M16 11a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm-8 1a3 3 0 1 0-3-3 3 3 0 0 0 3 3zm8 1c-2.7 0-8 1.3-8 4v3h16v-3c0-2.7-5.3-4-8-4zm-8 0c-.3 0-.7 0-1.1.1A4.7 4.7 0 0 1 9 17v3H1v-3c0-2.2 4.4-4 7-4z"/>',
+    bit: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zm-1 7V3.5L18.5 9zM8 13h8v2H8zm0 4h8v2H8z"/>',
+    reg: '<path d="M3 5h2v2H3zm4 0h14v2H7zM3 11h2v2H3zm4 0h14v2H7zm-4 6h2v2H3zm4 0h14v2H7z"/>',
+    age: '<path d="M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 16H5V10h14zM7 12h5v5H7z"/>',
+  };
+  const kpi = ({ href, icon, lbl, val, hint, tono = '', extra = '' }) => `
+    <a class="kpi kpi-link ${tono}" href="${href}" title="Ir a ${lbl}">
+      <div class="kpi-top"><span class="kpi-ico"><svg viewBox="0 0 24 24">${ICON[icon]}</svg></span><span class="kpi-go" aria-hidden="true">→</span></div>
+      <div class="lbl">${lbl}</div><div class="val">${val}</div><div class="hint">${hint}</div>${extra}
+    </a>`;
 
   app.innerHTML = `
-    <div class="head"><div><h1>Dashboard</h1><p class="sub">Bitácoras de transporte especial · ${esc(DB.config.eps)}</p></div>
-      <div class="row"><button class="btn" onclick="formCliente()">+ Cliente</button><button class="btn" onclick="importarFormato()" title="Sube una bitácora PDF ya hecha (TNA_…pdf): se leen el paciente y las fechas y se crea la bitácora con la firma anexada">⬆ Importar bitácora PDF</button><a class="btn primary" href="#/bitacora/nueva">+ Nueva bitácora</a></div></div>
+    <div class="head dash-head"><div><h1>Hola 👋</h1><p class="sub" style="text-transform:none">${fechaHoy} · ${esc(DB.config.eps)}</p></div>
+      <div class="row"><button class="btn" onclick="formCliente()">+ Cliente</button>
+        <button class="btn" onclick="importarFormato()" title="Sube una bitácora PDF ya hecha: se leen el paciente y las fechas">⬆ Importar PDF</button>
+        <a class="btn primary" href="#/bitacora/nueva?m=${mes}">+ Nueva bitácora</a></div></div>
+
     <div class="kpis">
-      <div class="kpi"><div class="lbl">Clientes</div><div class="val grad">${DB.clientes.length}</div><div class="hint">${DB.clientes.length - sinFirma.length} con firma e ID · ${sinFirma.length} pendientes</div></div>
-      <div class="kpi"><div class="lbl">Bitácoras</div><div class="val">${DB.bitacoras.length}</div><div class="hint">${delMes.length} en ${periodoTxt(mesActual)}</div></div>
-      <div class="kpi"><div class="lbl">Servicios (ida y regreso)</div><div class="val">${servicios}</div><div class="hint">${servicios * 2} filas en bitácoras</div></div>
-      <div class="kpi"><div class="lbl">Firmas pendientes</div><div class="val" style="color:var(--warn)">${pendientes.length}</div><div class="hint">${proximas.length} agendadas</div></div>
+      ${kpi({ href: '#/clientes', icon: 'cli', lbl: 'Clientes', val: DB.clientes.length, hint: `${completos} con firma e ID · ${sinAnexos.length} pendientes`,
+        extra: `<div class="meter" role="img" aria-label="${pct}% con anexos completos"><span style="width:${pct}%"></span></div><div class="hint">${pct}% con anexos completos</div>` })}
+      ${kpi({ href: '#/bitacoras', icon: 'bit', lbl: 'Bitácoras', val: DB.bitacoras.length, hint: `${bitsMes.length} de ${periodoTxt(mes)}` })}
+      ${kpi({ href: `#/registros?m=${mes}`, icon: 'reg', lbl: `Servicios · ${periodoTxt(mes)}`, val: servMes, hint: `${pacMes} paciente${pacMes === 1 ? '' : 's'} · ${servMes * 2} filas · ${servTotal} en total` })}
+      ${kpi({ href: '#/agenda', icon: 'age', lbl: 'Firmas pendientes', val: pendientes.length, tono: pendientes.length ? 'warn' : 'ok',
+        hint: pendientes.length ? `${proximas.length} agendada${proximas.length === 1 ? '' : 's'}` : 'Todo al día ✓' })}
     </div>
+
     ${resumenMes()}
+
     <div class="grid2">
-      <div class="card"><h2>Bitácoras recientes</h2>${tablaBitacoras(recientes)}</div>
       <div>
-        <div class="card"><h2>Anexos pendientes (firma / # ID)</h2>
-          ${sinFirma.length ? `<table class="list">${sinFirma.map(c => `<tr><td>${esc(nombreFirmante(c) || c.paciente)}<br><small class="muted">${esPaciente(c) ? 'Paciente' : 'Acudiente de ' + esc(c.paciente)} · falta ${faltantes(c).join(' y ')}</small></td>
+        <div class="card"><div class="pac-head"><h2>Servicios por mes</h2><a class="btn sm" href="#/registros?m=todos">Ver todos →</a></div>
+          ${porMes.length ? `<table class="list"><tr><th>Mes</th><th>Servicios</th><th>Pacientes</th><th>Bitácoras listas</th><th></th></tr>
+            ${porMes.map(x => `<tr class="click" onclick="location.hash='#/registros?m=${x.m}'"><td><b style="text-transform:capitalize">${periodoTxt(x.m)}</b></td>
+              <td>${x.serv} servicios</td><td>${x.pac} paciente${x.pac === 1 ? '' : 's'}</td>
+              <td><span class="badge ${x.ok === x.total ? 'b-ok' : 'b-warn'}">${x.ok} de ${x.total}</span></td><td class="solo-escritorio" style="text-align:right"><span class="muted">→</span></td></tr>`).join('')}</table>`
+            : '<div class="empty">Aún no hay servicios registrados</div>'}
+        </div>
+      </div>
+      <div>
+        <div class="card"><div class="pac-head"><h2>Anexos pendientes</h2><a class="btn sm" href="#/clientes">Clientes →</a></div>
+          ${sinAnexos.length ? `<table class="list">${sinAnexos.map(c => `<tr><td>${esc(nombreFirmante(c) || c.paciente)}<br><small class="muted">${esPaciente(c) ? 'Paciente' : 'Acudiente de ' + esc(c.paciente)} · falta ${faltantes(c).join(' y ')}</small></td>
             <td style="text-align:right;white-space:nowrap"><button class="btn sm primary" onclick="capturarFirma('${c.id}')">📎 Adjuntar</button></td></tr>`).join('')}</table>`
             : '<div class="empty">Todos los clientes tienen firma e ID ✓</div>'}
         </div>
-        <div class="card"><h2>Próximas firmas agendadas</h2>
-          ${proximas.length ? `<table class="list">${proximas.map(b => { const c = cliente(b.clienteId); return `
+        <div class="card"><div class="pac-head"><h2>Próximas firmas agendadas</h2><a class="btn sm" href="#/agenda">Agenda →</a></div>
+          ${proximas.length ? `<table class="list">${proximas.slice(0, 6).map(b => { const c = cliente(b.clienteId); return `
             <tr class="click" onclick="location.hash='#/bitacora/${b.id}'"><td><b>${fechaLarga(b.agendaFirma)}</b></td>
             <td>${esc(nombreFirmante(c) || '—')}<br><small class="muted">${esc(c?.paciente || '')} · ${periodoTxt(b.periodo)}</small></td><td>${modoBadge(b)}</td></tr>`; }).join('')}</table>`
             : '<div class="empty">No hay firmas agendadas</div>'}
@@ -767,7 +801,7 @@ const VIVO = {
     if (VIVO.ocupado()) { $('#live').hidden = false; return; }
     VIVO.refrescar();
   },
-  estado(on) { const el = $('#vivo'); if (el) { el.textContent = on ? '● En vivo' : '○ Reconectando…'; el.classList.toggle('off', !on); } },
+  estado(on) { const el = $('#vivo'); if (el) { el.innerHTML = on ? '<i>●</i><b>En vivo</b>' : '<i>○</i><b>Reconectando…</b>'; el.classList.toggle('off', !on); el.title = on ? 'Sincronizado en tiempo real' : 'Reconectando…'; } },
   conectar() {
     const es = new EventSource('/api/eventos');
     let primera = true;
