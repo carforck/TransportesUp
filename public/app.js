@@ -1115,7 +1115,10 @@ const ACCESO = {
       const siguiente = () => {
         if (!$('#login')) return;
         if (document.hidden) { ACCESO.timer = setTimeout(siguiente, 2000); return; }
-        const antes = capas[i]; antes.classList.toggle('on', false);
+        const antes = capas[i];
+        antes.style.transform = getComputedStyle(antes).transform; // congela su zoom mientras se desvanece
+        antes.classList.toggle('on', false);
+        setTimeout(() => { if (!antes.classList.contains('on')) antes.style.transform = ''; }, 2000);
         const va = $('video', antes); if (va) setTimeout(() => va.pause(), 1700);
         i = (i + 1) % capas.length; const c = capas[i]; c.classList.add('on');
         const v = $('video', c);
