@@ -406,7 +406,27 @@ a.pb-row[href]:hover { background: var(--bg); }
 
 /* ---------- Acceso (inicio de sesión) ---------- */
 .sin-sesion .sidebar, .sin-sesion .topbar, .sin-sesion #app, .sin-sesion #demo, .sin-sesion #live { display: none !important; }
-.login { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: var(--bg); overflow: auto; }
+.login { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: #2a1633; overflow: auto; }
+/* Fondo: fotos de Cartagena con fundido + acercamiento lento */
+.login-fotos { position: absolute; inset: 0; overflow: hidden; }
+.login-foto { position: absolute; inset: 0; background: center / cover no-repeat; opacity: 0; transform: scale(1.04); transition: opacity 1.6s ease, transform 9s ease-out; }
+.login-foto.on { opacity: 1; transform: scale(1.12); }
+.login-velo { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(42, 12, 54, .35), rgba(42, 12, 54, .7)); }
+.login-lema { display: none; }
+.login-credito { position: absolute; right: 12px; bottom: 8px; z-index: 2; font-size: 11px; color: rgba(255, 255, 255, .75); text-decoration: none; }
+.login-credito:hover { color: #fff; text-decoration: underline; }
+.login .login-box { position: relative; z-index: 1; }
+@media (prefers-reduced-motion: reduce) { .login-foto, .login-foto.on { transition: none; transform: none; } }
+@media (min-width: 900px) {
+  .login { grid-template-columns: minmax(0, 1.35fr) minmax(440px, 1fr); padding: 0; place-items: stretch; background: var(--bg); }
+  .login-fotos { position: relative; inset: auto; }
+  .login-velo { background: linear-gradient(200deg, rgba(122, 42, 143, .15) 30%, rgba(42, 12, 54, .78)); }
+  .login-lema { display: flex; flex-direction: column; gap: 4px; position: absolute; left: 48px; bottom: 44px; color: #fff; text-shadow: 0 2px 12px rgba(0, 0, 0, .35); }
+  .login-lema b { font-size: 34px; font-weight: 800; letter-spacing: -.01em; }
+  .login-lema span { font-size: 16px; opacity: .9; transition: opacity .4s; }
+  .login-credito { right: auto; left: 48px; bottom: 16px; }
+  .login .login-box { align-self: center; justify-self: center; margin: 32px; box-shadow: none; border: 0; background: transparent; }
+}
 .login-box { width: min(380px, 100%); background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 28px 24px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 10px 30px rgba(60, 20, 80, .08); }
 .login-logo { width: 180px; max-width: 70%; align-self: center; margin-bottom: 4px; }
 .login-box h1 { margin: 0; font-size: 20px; text-align: center; color: var(--ink); }

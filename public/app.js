@@ -1033,8 +1033,15 @@ const ACCESO = {
     closeModal();
     document.documentElement.classList.add('sin-sesion');
     const sinConfig = /configure/i.test(aviso || '');
+    const fotos = ACCESO.FOTOS;
     document.body.insertAdjacentHTML('beforeend', `
       <div id="login" class="login" role="dialog" aria-modal="true" aria-labelledby="loginTit">
+        <div class="login-fotos" aria-hidden="true">
+          ${fotos.map((f, i) => `<div class="login-foto${i === 0 ? ' on' : ''}" data-src="/img/login/${f.archivo}" ${i === 0 ? `style="background-image:url('/img/login/${f.archivo}')"` : ''}></div>`).join('')}
+          <div class="login-velo"></div>
+          <div class="login-lema"><b>Cartagena de Indias</b><span id="loginLugar">${esc(fotos[0].lugar)}</span></div>
+        </div>
+        <a class="login-credito" href="https://commons.wikimedia.org/wiki/Category:Quality_images_of_Cartagena,_Colombia" target="_blank" rel="noopener">Fotos: Bernard Gagnon · CC BY-SA 4.0</a>
         <form class="login-box" id="loginForm" autocomplete="on">
           <img src="/logo.png" alt="Transportes UP" class="login-logo">
           <h1 id="loginTit">Bitácoras de servicio</h1>
@@ -1061,7 +1068,24 @@ const ACCESO = {
       } catch (x) { err.textContent = x.message; err.hidden = false; b.disabled = false; b.textContent = 'Ingresar'; f.clave.select(); }
     };
     setTimeout(() => f.usuario.focus(), 50);
+    // Carrusel de fondo: carga las demás fotos después de la primera y las alterna con fundido
+    const capas = $$('.login-foto');
+    setTimeout(() => capas.forEach(c => { if (!c.style.backgroundImage) c.style.backgroundImage = `url('${c.dataset.src}')`; }), 1200);
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      let i = 0;
+      ACCESO.timer = setInterval(() => {
+        if (document.hidden) return;
+        capas[i].classList.remove('on'); i = (i + 1) % capas.length; capas[i].classList.add('on');
+        $('#loginLugar').textContent = fotos[i].lugar;
+      }, 7000);
+    }
   },
+  FOTOS: [
+    { archivo: 'murallas.webp', lugar: 'Murallas y avenida Santander' },
+    { archivo: 'calle-30.webp', lugar: 'Getsemaní · Calle 30' },
+    { archivo: 'bocagrande.webp', lugar: 'Bocagrande' },
+    { archivo: 'san-pedro-claver.webp', lugar: 'Iglesia de San Pedro Claver' },
+  ],
   async salir() {
     if (!confirm('¿Cerrar la sesión en este dispositivo?')) return;
     await fetch('/api/logout', { method: 'POST' }).catch(() => {});
