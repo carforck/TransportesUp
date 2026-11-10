@@ -34,6 +34,7 @@ const CLIENTE_ID = Math.random().toString(36).slice(2) + Date.now().toString(36)
 async function api(method, url, body) {
   const r = await fetch('/api/' + url, { method, headers: { 'Content-Type': 'application/json', 'X-Cliente': CLIENTE_ID }, body: body ? JSON.stringify(body) : undefined });
   const out = await r.json().catch(() => ({}));
+  if (out.login && (r.status === 401 || r.status === 503)) { ACCESO.mostrar(out.error); throw new Error('Inicie sesión para continuar'); }
   if (!r.ok) throw new Error(out.error || r.statusText);
   const v = r.headers.get('X-Version'); if (v) VIVO.version = +v; // mi propio cambio: el sondeo no debe tomarlo como ajeno
   return out;
@@ -1005,8 +1006,11 @@ const VIVO = {
   sondeo() {
     const revisar = async () => {
       if (document.hidden) return;
+      if (ACCESO.bloqueado) return;
       try {
-        const { version } = await (await fetch('/api/version', { cache: 'no-store' })).json();
+        const r = await fetch('/api/version', { cache: 'no-store' });
+        if (r.status === 401) { ACCESO.mostrar(); return; } // la sesión venció
+        const { version } = await r.json();
         VIVO.estado(true);
         if (!VIVO.version) VIVO.version = version;
         else if (version !== VIVO.version) { VIVO.version = version; VIVO.pendiente = true; VIVO.intentar(); }
@@ -1019,6 +1023,65 @@ const VIVO = {
 $('#liveBtn').onclick = () => { if (window.__bitOcupado?.() && !confirm('Tiene cambios sin guardar en esta bitácora. ¿Descartarlos y cargar los datos nuevos?')) return; VIVO.refrescar(); };
 // al terminar de escribir en un campo, aplica lo pendiente si ya no está ocupado
 document.addEventListener('focusout', () => setTimeout(() => VIVO.pendiente && !$('#live').hidden && !VIVO.ocupado() && VIVO.refrescar(), 300));
-VIVO.conectar();
+/* ================= Acceso (inicio de sesión) ================= */
+// El servidor decide si se exige (siempre en Vercel; en local solo si APP_USUARIO/APP_CLAVE existen).
+const ACCESO = {
+  bloqueado: false,
+  mostrar(aviso) {
+    if (ACCESO.bloqueado) return;
+    ACCESO.bloqueado = true;
+    closeModal();
+    document.documentElement.classList.add('sin-sesion');
+    const sinConfig = /configure/i.test(aviso || '');
+    document.body.insertAdjacentHTML('beforeend', `
+      <div id="login" class="login" role="dialog" aria-modal="true" aria-labelledby="loginTit">
+        <form class="login-box" id="loginForm" autocomplete="on">
+          <img src="/logo.png" alt="Transportes UP" class="login-logo">
+          <h1 id="loginTit">Bitácoras de servicio</h1>
+          <p class="login-sub">Ingrese para ver y gestionar la información.</p>
+          ${sinConfig ? `<p class="login-err">${esc(aviso)}</p>` : ''}
+          <label>Usuario<input name="usuario" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
+          <label>Contraseña
+            <span class="login-pass"><input name="clave" type="password" autocomplete="current-password" required>
+            <button type="button" class="login-ver" aria-label="Mostrar contraseña" title="Mostrar contraseña">👁</button></span></label>
+          <p class="login-err" id="loginErr" role="alert" hidden></p>
+          <button class="btn primary" type="submit" ${sinConfig ? 'disabled' : ''}>Ingresar</button>
+        </form>
+      </div>`);
+    const f = $('#loginForm'), err = $('#loginErr');
+    $('.login-ver', f).onclick = e => { const i = f.clave; i.type = i.type === 'password' ? 'text' : 'password'; e.currentTarget.setAttribute('aria-label', i.type === 'password' ? 'Mostrar contraseña' : 'Ocultar contraseña'); };
+    f.onsubmit = async e => {
+      e.preventDefault();
+      const b = $('button[type=submit]', f); b.disabled = true; b.textContent = 'Ingresando…'; err.hidden = true;
+      try {
+        const r = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.fromEntries(new FormData(f))) });
+        const out = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(out.error || 'No se pudo ingresar');
+        location.reload(); // arranca limpio con la sesión
+      } catch (x) { err.textContent = x.message; err.hidden = false; b.disabled = false; b.textContent = 'Ingresar'; f.clave.select(); }
+    };
+    setTimeout(() => f.usuario.focus(), 50);
+  },
+  async salir() {
+    if (!confirm('¿Cerrar la sesión en este dispositivo?')) return;
+    await fetch('/api/logout', { method: 'POST' }).catch(() => {});
+    location.reload();
+  },
+};
 
-router();
+(async function iniciar() {
+  let s = { requerida: false, autenticado: true };
+  try { s = await (await fetch('/api/sesion', { cache: 'no-store' })).json(); } catch {}
+  if (s.requerida && !s.autenticado) {
+    let aviso = '';
+    if (!s.configurada) aviso = 'Acceso bloqueado: configure APP_USUARIO y APP_CLAVE en el servidor.';
+    return ACCESO.mostrar(aviso);
+  }
+  if (s.requerida) {
+    const pie = $('.side-foot');
+    pie?.insertAdjacentHTML('beforeend', `<button class="salir-btn" id="salirBtn" title="Cerrar sesión de ${esc(s.usuario || '')}">⎋ <span>Cerrar sesión</span></button>`);
+    $('#salirBtn')?.addEventListener('click', ACCESO.salir);
+  }
+  VIVO.conectar();
+  router();
+})();

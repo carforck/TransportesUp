@@ -403,3 +403,24 @@ a.pb-row[href]:hover { background: var(--bg); }
 .esp { margin-bottom: 14px; }
 .esp-top { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; flex-wrap: wrap; }
 .esp-top span { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ---------- Acceso (inicio de sesión) ---------- */
+.sin-sesion .sidebar, .sin-sesion .topbar, .sin-sesion #app, .sin-sesion #demo, .sin-sesion #live { display: none !important; }
+.login { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: var(--bg); overflow: auto; }
+.login-box { width: min(380px, 100%); background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 28px 24px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 10px 30px rgba(60, 20, 80, .08); }
+.login-logo { width: 180px; max-width: 70%; align-self: center; margin-bottom: 4px; }
+.login-box h1 { margin: 0; font-size: 20px; text-align: center; color: var(--ink); }
+.login-sub { margin: -6px 0 4px; text-align: center; color: var(--muted); font-size: 14px; }
+.login-box label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; color: var(--ink); }
+.login-box input { font: inherit; font-size: 16px; padding: 10px 12px; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); width: 100%; box-sizing: border-box; }
+.login-box input:focus { outline: 2px solid var(--morado); outline-offset: 1px; border-color: var(--morado); }
+.login-pass { position: relative; display: block; }
+.login-pass input { padding-right: 48px; }
+.login-ver { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border: 0; background: none; cursor: pointer; font-size: 18px; border-radius: 8px; }
+.login-err { margin: 0; padding: 8px 12px; border-radius: 8px; background: #FDECEF; color: #A3123A; font-size: 13px; }
+.login-box .btn { width: 100%; margin-top: 4px; }
+.salir-btn { margin-top: 6px; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; padding: 6px 8px; border-radius: 8px; white-space: nowrap; }
+.salir-btn:hover { color: var(--morado); background: rgba(110, 42, 142, .06); }
+@media (min-width: 900px) and (hover: hover) {
+  .sb-auto .sidebar:not(:hover):not(:focus-within) .salir-btn span { opacity: 0; }
+}

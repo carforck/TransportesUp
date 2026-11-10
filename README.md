@@ -178,7 +178,8 @@ El proyecto ya está estructurado para que el despliegue pase sin errores:
 | `api/index.js` | Función Node.js (Fluid Compute) que atiende `/api/*` y `/firmas/*` mediante las reescrituras de `vercel.json`. |
 | Tiempo real | El navegador consulta `/api/version` cada 5 s. En serverless las instancias no comparten memoria, así que no se usa SSE. |
 | Datos | Sin almacenamiento configurado, la app arranca en **modo demostración** (`/tmp`, temporal) y lo avisa en pantalla. **Nunca falla por disco de solo lectura.** |
-| Seguridad | `.vercelignore` impide subir `data/` y los PDF reales. |
+| Seguridad | `.vercelignore` impide subir `data/`, los PDF reales y `server.js` (el servidor local). `vercel.json` fija `"framework": null`: si el proyecto se crea con un preset de servidor Node, Vercel ejecutaría `public/app.js` como backend y todas las rutas fallarían. |
+| Acceso | Inicio de sesión obligatorio (ver abajo). |
 
 ### Almacenamiento permanente: Supabase
 
@@ -196,11 +197,17 @@ El proyecto ya está estructurado para que el despliegue pase sin errores:
    - **Vercel**: Settings → Environment Variables.
 3. Al arrancar, `/api/info` debe responder `"almacenamiento":"supabase"`.
 
-**Antes de usarla en producción en Vercel falta además:**
+### Inicio de sesión
 
-1. **Migrar los datos reales** de `data/` a Supabase, cuando se decida.
-2. **Autenticación**: la app no tiene usuarios. En internet es obligatorio protegerla, por ejemplo con Vercel Authentication o un inicio de sesión propio.
-3. Elegir la cuenta o el equipo de Vercel y conectar el repositorio.
+`lib/auth.js`, sin dependencias. Variables: `APP_USUARIO` y `APP_CLAVE` (opcional `SESION_SECRETO`).
+
+- **Sesión**: cookie firmada con HMAC-SHA256, `HttpOnly` + `SameSite=Lax` + `Secure`, válida 30 días. Cambiar `APP_CLAVE` cierra todas las sesiones.
+- **Qué protege**: toda la API y las imágenes de `/firmas/*`. Solo quedan abiertas `/api/info` (sin datos), `/api/sesion`, `/api/login` y `/api/logout`.
+- **En Vercel nunca queda abierta**: si faltan las variables, la API responde 503 y no entrega datos.
+- **En local** se exige solo si las dos variables están en `.env.local`.
+- **Fuerza bruta**: 5 intentos fallidos desde la misma IP → bloqueo de 15 minutos.
+
+**Despliegue actual:** https://transportesup.vercel.app (equipo `carlos-carranzas-projects`). Cada push a `main` despliega solo.
 
 La simulación local de Vercel (estáticos + reescrituras + función con `VERCEL=1`) se probó: API, anexos, modo demostración y sondeo funcionando.
 
@@ -233,4 +240,4 @@ Los scripts leen sus variables de `.env.local` (ver `.env.example`).
 
 - La app maneja **datos de salud** (nombres, documentos, firmas). Por eso `data/`, los PDF originales y las imágenes fuente están en `.gitignore` y **nunca se suben al repositorio**.
 - Para respaldar los datos reales, copie la carpeta `data/` completa (`db.json` y `firmas/`) a un medio seguro.
-- La app no tiene usuarios ni contraseñas: está pensada para una **red local de confianza**. Antes de publicarla en internet hay que agregar autenticación.
+- El acceso está protegido con usuario y contraseña (ver *Inicio de sesión*). Las claves viven solo en `.env.local` y en las variables de Vercel, nunca en el repositorio.
