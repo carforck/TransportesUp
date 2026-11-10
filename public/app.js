@@ -1039,14 +1039,22 @@ const ACCESO = {
         <div class="login-fotos" aria-hidden="true">
           ${fotos.map((f, i) => `<div class="login-foto${i === 0 ? ' on' : ''}" data-src="/img/login/${f.archivo}" ${i === 0 ? `style="background-image:url('/img/login/${f.archivo}')"` : ''}></div>`).join('')}
           <div class="login-velo"></div>
-          <div class="login-lema"><b>Cartagena de Indias</b><span id="loginLugar">${esc(fotos[0].lugar)}</span></div>
+          <div class="login-lema">
+            <span class="ll-eti">Transporte especial · Salud Total EPS</span>
+            <b>Bitácoras de servicio, sin papeleo</b>
+            <p>Registre los servicios de cada paciente, anexe su firma y su documento una sola vez, y genere la bitácora mensual lista para imprimir o enviar en PDF.</p>
+            <ul>
+              <li>Pacientes con ruta y horarios fijos</li>
+              <li>Firma e ID anexados automáticamente</li>
+              <li>Agenda de firmas y tablero mensual</li>
+            </ul>
+          </div>
         </div>
-        <a class="login-credito" href="https://commons.wikimedia.org/wiki/Category:Quality_images_of_Cartagena,_Colombia" target="_blank" rel="noopener">Fotos: Bernard Gagnon · CC BY-SA 4.0</a>
         <div class="login-col">
         <form class="login-box" id="loginForm" autocomplete="on">
           <img src="/logo.png" alt="Transportes UP" class="login-logo">
-          <h1 id="loginTit">Bitácoras de servicio</h1>
-          <p class="login-sub">Ingrese para ver y gestionar la información.</p>
+          <h1 id="loginTit">Iniciar sesión</h1>
+          <p class="login-sub">Acceso solo para personal autorizado.</p>
           ${sinConfig ? `<p class="login-err">${esc(aviso)}</p>` : ''}
           <label>Usuario<input name="usuario" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
           <label for="loginClave">Contraseña</label>
@@ -1075,6 +1083,7 @@ const ACCESO = {
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
               vanttagetech.com</a>
           </span>
+          <a class="login-credito" href="https://commons.wikimedia.org/wiki/Category:Quality_images_of_Cartagena,_Colombia" target="_blank" rel="noopener">Fotos de Cartagena: Bernard Gagnon · CC BY-SA 4.0</a>
         </footer>
         </div>
       </div>`);
@@ -1100,7 +1109,7 @@ const ACCESO = {
         location.reload(); // arranca limpio con la sesión
       } catch (x) { err.textContent = x.message; err.hidden = false; b.disabled = false; b.textContent = 'Ingresar'; f.clave.select(); }
     };
-    setTimeout(() => f.usuario.focus(), 50);
+    if (matchMedia('(hover: hover)').matches) setTimeout(() => f.usuario.focus(), 50); // en celular no abre el teclado solo
     // Carrusel de fondo: carga las demás fotos después de la primera y las alterna con fundido
     const capas = $$('.login-foto');
     setTimeout(() => capas.forEach(c => { if (!c.style.backgroundImage) c.style.backgroundImage = `url('${c.dataset.src}')`; }), 1200);
@@ -1109,7 +1118,6 @@ const ACCESO = {
       ACCESO.timer = setInterval(() => {
         if (document.hidden) return;
         capas[i].classList.remove('on'); i = (i + 1) % capas.length; capas[i].classList.add('on');
-        $('#loginLugar').textContent = fotos[i].lugar;
       }, 7000);
     }
   },
