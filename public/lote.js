@@ -289,6 +289,7 @@ function importarLote() {
   inp.onchange = () => leer([...inp.files]);
 
   let lote = [];
+  const claveLote = nuevaClave(); // importar dos veces lo mismo (doble clic, reintento) = una sola importación
   async function leer(files) {
     if (!files.length) return;
     const res = $('#res', m);
@@ -339,7 +340,7 @@ function importarLote() {
             <td><b>${esc(it.cliente.paciente)}</b><br><small class="muted">CC ${esc(it.cliente.docPaciente)} · ${esc(ipsCanon(it.cliente.ips))}</small></td>
             <td>${esc(b.codigo || '—')} ${planBadge(b.plan)}</td>
             <td>${periodoTxt(b.periodo)}<br><small class="muted">${b.fechas.length} servicios</small></td>
-            <td>${it.existente ? '<span class="badge b-dig">Existente</span>' : '<span class="badge b-ok">Nuevo</span>'}${b._previa ? `<br><span class="badge b-warn">Ya tiene bitácora de este mes (${fechasDe(b._previa).length} fechas)</span><br><small class="muted">Si la marca, se reemplaza por la del PDF</small>` : ''}</td>
+            <td>${it.existente ? '<span class="badge b-dig">Existente</span><br><small class="muted">se actualizan ruta y horas; conserva firma e ID</small>' : '<span class="badge b-ok">Nuevo</span>'}${b._previa ? `<br><span class="badge b-warn">Ya tiene bitácora de este mes (${fechasDe(b._previa).length} fechas)</span><br><small class="muted">Si la marca, se reemplaza por la del PDF</small>` : ''}</td>
             <td><details><summary>${resumenAlertas(b._alertas)}</summary>${listaAlertas(b._alertas)}</details></td></tr>`).join('')).join('')}
       </table></div>
       <p class="muted" style="font-size:12px">Quedan sin marcar las filas con ⛔ errores (revíselas en el PDF original) y las de pacientes que ya tienen bitácora ese mes (para no pisar lo que se hizo a mano). Los avisos no impiden importar; después puede corregir cada bitácora en "✏️ Editar documento".</p>
@@ -357,12 +358,14 @@ function importarLote() {
     const clientes = [], vistos = new Set(), bitacoras = [];
     for (const [it, b] of elegidas) {
       if (it.ref && !vistos.has(it.ref)) { vistos.add(it.ref); clientes.push({ ref: it.ref, datos: it.cliente }); }
+      // Paciente existente: se actualizan ruta, horas y código con los del PDF (el servidor nunca toca firma, # ID ni acudiente)
+      if (it.existente && !vistos.has(it.existente.id)) { vistos.add(it.existente.id); clientes.push({ id: it.existente.id, datos: it.cliente }); }
       const { _previa, _alertas, ...datos } = b;
       bitacoras.push({ ...(it.existente ? { clienteId: it.existente.id } : { clienteRef: it.ref }), ...(_previa ? { id: _previa.id } : {}), datos });
     }
     try {
-      const r = await api('POST', 'lote', { clientes, bitacoras });
-      closeModal(); toast(`Importadas ${r.bitacoras.length} bitácoras · ${r.clientes.length} clientes nuevos`);
+      const r = await api('POST', 'lote', { clientes, bitacoras }, { clave: claveLote });
+      closeModal(); toast(`Importadas ${r.bitacoras.length} bitácoras · ${r.clientes.length} clientes nuevos${r.actualizados?.length ? ` · ${r.actualizados.length} actualizados` : ''}`);
       const per = elegidas[0]?.[1].periodo;
       if (per) FILTRO.bitacoras = { ...FILTRO.bitacoras, m: per, p: 1 };
       if (location.hash === '#/bitacoras') router(); else location.hash = '#/bitacoras';

@@ -31,13 +31,29 @@ const nombreArchivo = b => {
 
 // Identifica esta pestaña para no refrescarse con sus propios cambios
 const CLIENTE_ID = Math.random().toString(36).slice(2) + Date.now().toString(36);
-async function api(method, url, body) {
-  const r = await fetch('/api/' + url, { method, headers: { 'Content-Type': 'application/json', 'X-Cliente': CLIENTE_ID }, body: body ? JSON.stringify(body) : undefined });
-  const out = await r.json().catch(() => ({}));
-  if (out.login && (r.status === 401 || r.status === 503)) { ACCESO.mostrar(out.error); throw new Error('Inicie sesión para continuar'); }
-  if (!r.ok) throw new Error(out.error || r.statusText);
-  const v = r.headers.get('X-Version'); if (v) VIVO.version = +v; // mi propio cambio: el sondeo no debe tomarlo como ajeno
-  return out;
+// Idempotencia en el navegador:
+// · opts.clave → cabecera Idempotency-Key: si la misma acción llega dos veces (reintento, doble envío), el servidor responde
+//   lo mismo sin volver a escribir. Cada formulario genera su clave al abrirse.
+// · Dos llamadas idénticas simultáneas (doble clic) comparten una sola petición.
+// · opts.duplicado → el usuario confirmó que SÍ quiere otra bitácora igual.
+const nuevaClave = () => (crypto.randomUUID?.() || Math.random().toString(36).slice(2) + Date.now().toString(36));
+const EN_CURSO = new Map();
+function api(method, url, body, opts = {}) {
+  const firma = method !== 'GET' ? `${method} ${url} ${opts.clave || ''} ${body ? JSON.stringify(body) : ''}` : '';
+  if (firma && EN_CURSO.has(firma)) return EN_CURSO.get(firma);
+  const p = (async () => {
+    const headers = { 'Content-Type': 'application/json', 'X-Cliente': CLIENTE_ID };
+    if (opts.clave) headers['Idempotency-Key'] = opts.clave;
+    if (opts.duplicado) headers['X-Permitir-Duplicado'] = '1';
+    const r = await fetch('/api/' + url, { method, headers, body: body ? JSON.stringify(body) : undefined });
+    const out = await r.json().catch(() => ({}));
+    if (out.login && (r.status === 401 || r.status === 503)) { ACCESO.mostrar(out.error); throw new Error('Inicie sesión para continuar'); }
+    if (!r.ok) throw Object.assign(new Error(out.error || r.statusText), { status: r.status, existente: out.existente });
+    const v = r.headers.get('X-Version'); if (v) VIVO.version = +v; // mi propio cambio: el sondeo no debe tomarlo como ajeno
+    return out;
+  })();
+  if (firma) { EN_CURSO.set(firma, p); p.finally(() => EN_CURSO.delete(firma)).catch(() => {}); }
+  return p;
 }
 async function reload() { DB = await api('GET', 'db'); $('#nit').textContent = DB.config.nit; }
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 2600); }
@@ -320,16 +336,18 @@ function duplicarBitacora(id) {
     <div class="form"><label>Mes destino<input type="month" id="dm" value="${mSig}"></label>
       <label class="chk" style="align-self:end"><input type="checkbox" id="dd" checked> Copiar los mismos días hábiles (lun–vie del mes destino)</label></div>
     <div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn" onclick="closeModal()">Cancelar</button><button class="btn primary" id="ok">Duplicar</button></div>`);
+  const claveDup = nuevaClave();
   $('#ok', md).onclick = async () => {
     const per = $('#dm', md).value; if (!per) return toast('Elija el mes');
-    if (DB.bitacoras.some(x => x.clienteId === b.clienteId && x.periodo === per) && !confirm('Ya existe una bitácora de este cliente en ese mes. ¿Crear otra?')) return;
+    const hay = DB.bitacoras.some(x => x.clienteId === b.clienteId && x.periodo === per && codigoDe(x) === codigoDe(b) && (x.plan || '') === (b.plan || ''));
+    if (hay && !confirm('Ya existe una bitácora de este cliente en ese mes con el mismo código. ¿Crear otra?')) return;
     const [yy, mm] = per.split('-').map(Number), n = new Date(yy, mm, 0).getDate();
     const fechas = $('#dd', md).checked ? Array.from({ length: n }, (_, i) => `${per}-${String(i + 1).padStart(2, '0')}`).filter(d => { const w = new Date(d + 'T12:00').getDay(); return w > 0 && w < 6; }) : [];
     // las correcciones se trasladan por tramo (ida/regreso) tomando la primera fila corregida como patrón
     const patron = {};
     for (const [k, v] of Object.entries(b.ajustes || {})) { const t = k.split('|')[1]; patron[t] ||= v; }
     const ajustes = {}; fechas.forEach(f => { for (const t of ['ida', 'reg']) if (patron[t]) ajustes[`${f}|${t}`] = { ...patron[t] }; });
-    const nueva = await api('POST', 'bitacoras', { clienteId: b.clienteId, periodo: per, fechas, modoFirma: b.modoFirma, agendaFirma: '', estado: 'pendiente', ajustes, excluidas: [] });
+    const nueva = await api('POST', 'bitacoras', { clienteId: b.clienteId, periodo: per, fechas, codigo: codigoDe(b), plan: b.plan || '', modoFirma: b.modoFirma, agendaFirma: '', estado: 'pendiente', ajustes, excluidas: [] }, { clave: claveDup, duplicado: hay });
     closeModal(); toast('Bitácora duplicada'); location.hash = '#/bitacora/' + nueva.id;
   };
 }
@@ -447,6 +465,7 @@ function formCliente(id, prefill = {}, onSaved) {
   const toggleAcu = () => { const pac = $('input[name=firmante]:checked', m).value === 'paciente'; $$('#acuFields input[name=acudiente], #acuFields input[name=docAcudiente]', m).forEach(i => i.closest('label').hidden = pac); };
   $$('input[name=firmante]', m).forEach(r => r.onchange = toggleAcu); toggleAcu();
 
+  const claveForm = nuevaClave(); // una por apertura del formulario: reenviar = misma operación
   $('#fc', m).onsubmit = async e => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(e.target));
@@ -457,7 +476,20 @@ function formCliente(id, prefill = {}, onSaved) {
     if (fid?.error) return toast('# ID: ' + fid.error);
     if (firma) data.firma = firma;
     if (fid) data.firmaId = fid;
-    const saved = id ? await api('PUT', 'clientes/' + id, data) : await api('POST', 'clientes', data);
+    // Aviso temprano de documento repetido (el servidor lo vuelve a validar)
+    const ya = DB.clientes.find(x => x.id !== id && x.docPaciente && x.docPaciente === data.docPaciente);
+    if (ya) {
+      if (confirm(`Ya existe un cliente con el documento ${ya.docPaciente}: ${ya.paciente}.\n\n¿Abrir ese cliente en lugar de crear otro?`)) { closeModal(); formCliente(ya.id, {}, onSaved); }
+      return;
+    }
+    const btn = e.submitter || $('#fc button.primary', m); btn.disabled = true; const txt = btn.textContent; btn.textContent = 'Guardando…';
+    let saved;
+    try { saved = id ? await api('PUT', 'clientes/' + id, data, { clave: claveForm }) : await api('POST', 'clientes', data, { clave: claveForm }); }
+    catch (err) {
+      btn.disabled = false; btn.textContent = txt;
+      if (err.status === 409 && err.existente && confirm(err.message + '\n\n¿Abrir ese cliente?')) { closeModal(); await reload(); return formCliente(err.existente, {}, onSaved); }
+      return toast('⚠️ ' + err.message);
+    }
     closeModal(); toast(firma || fid ? 'Cliente y anexos guardados' : 'Cliente guardado');
     if (onSaved) { await reload(); return onSaved(saved); }
     await router();
@@ -650,12 +682,13 @@ function agregarFecha(cid, mes) {
   const md = modal(`<h2 style="margin-top:0">Agregar servicio</h2><p class="sub">${esc(c.paciente)} · se agregan ida y regreso con la ruta fija del cliente.</p>
     <label>Fecha del servicio<input type="date" id="nfch" value="${mes ? mes + '-01' : hoy()}"></label>
     <div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn" onclick="closeModal()">Cancelar</button><button class="btn primary" id="ok">Agregar</button></div>`);
+  const claveAdd = nuevaClave();
   $('#ok', md).onclick = async () => {
     const f = $('#nfch', md).value; if (!f) return toast('Elija la fecha');
     const per = f.slice(0, 7), b = DB.bitacoras.find(x => x.clienteId === cid && x.periodo === per);
     if (b?.fechas.includes(f)) return toast('Esa fecha ya está registrada');
     if (b) await api('PUT', 'bitacoras/' + b.id, { fechas: [...b.fechas, f].sort() });
-    else await api('POST', 'bitacoras', { clienteId: cid, periodo: per, fechas: [f], modoFirma: 'digital', agendaFirma: '', estado: 'pendiente', ajustes: {}, excluidas: [] });
+    else await api('POST', 'bitacoras', { clienteId: cid, periodo: per, fechas: [f], codigo: c.codigo || DB.config.codigo, modoFirma: 'digital', agendaFirma: '', estado: 'pendiente', ajustes: {}, excluidas: [] }, { clave: claveAdd });
     closeModal(); toast(b ? 'Fecha agregada' : `Fecha agregada (nueva bitácora de ${periodoTxt(per)})`); router();
   };
 }
@@ -727,6 +760,7 @@ function viewBitacora(param = '') {
   if (!b) { app.innerHTML = '<div class="card empty">Bitácora no encontrada</div>'; return; }
   b.ajustes ||= {}; b.excluidas ||= [];
   let editando = false, sucio = false;
+  const claveBit = nuevaClave(); // crear esta bitácora dos veces (doble clic / reintento) = una sola
   window.__bitOcupado = () => sucio || editando;
 
   const paso = (n, titulo, ayuda, cuerpo, extra = '') => `
@@ -937,7 +971,7 @@ function viewBitacora(param = '') {
     const excluidas = b.excluidas.filter(k => claves.has(k));
     const { id: _id, creado, ...resto } = b;
     const data = { ...resto, fechas: delMes, ajustes, excluidas };
-    if (!b.id) { const s = await api('POST', 'bitacoras', data); b.id = s.id; history.replaceState(null, '', '#/bitacora/' + s.id); }
+    if (!b.id) { const s = await api('POST', 'bitacoras', data, { clave: claveBit, duplicado: !!dup }); b.id = s.id; history.replaceState(null, '', '#/bitacora/' + s.id); }
     else await api('PUT', 'bitacoras/' + b.id, data);
     b.fechas = delMes; b.ajustes = ajustes; b.excluidas = excluidas;
     marcarSucio(false); renderCal(); toast('Bitácora guardada'); return true;
