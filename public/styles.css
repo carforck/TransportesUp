@@ -613,3 +613,10 @@ button.pb-row:hover { background: var(--bg); }
 @media (max-width: 699px) { .paso-fin .btn { flex: 1 1 auto; } }
 .cal button.fest.on { color: #fff; }
 .cal button.fest.on { box-shadow: inset 0 -4px 0 #FFC7D8; }
+/* Ajustes de revisión visual */
+@media (max-width: 699px) { .dash-head { align-items: stretch; } }
+.kpi .lbl { padding-right: 24px; }
+.chip .x { border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 12px; padding: 0 0 0 6px; }
+.chip .x:hover { color: var(--danger); }
+.paso-fin .paso-borrar { margin-right: auto; }
+@media (max-width: 699px) { .paso-fin .paso-borrar { order: 9; flex-basis: 100%; } }

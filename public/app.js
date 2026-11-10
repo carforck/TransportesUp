@@ -79,6 +79,7 @@ const modoBadge = b => `<span class="badge ${b.modoFirma === 'digital' ? 'b-dig'
 /* ================= Router ================= */
 const routes = { '': viewDashboard, clientes: viewClientes, registros: viewRegistros, bitacoras: viewBitacoras, bitacora: viewBitacora, agenda: viewAgenda, config: viewConfig };
 async function router() {
+  ocultarTip(); // un tooltip del gráfico no debe quedar flotando sobre otra vista
   const [ruta, qs = ''] = location.hash.replace(/^#/, '').split('?');
   let [, name = '', id = ''] = ruta.split('/');
   id = name === 'registros' ? qs : id + (qs ? '?' + qs : '');
@@ -192,7 +193,7 @@ function graficoMeses(el, meses, sel, alClic) {
       [`${d.pac}`, d.pac === 1 ? 'paciente' : 'pacientes']];
     marcas += `<rect x="${m.l + banda * i}" y="${m.t - 18}" width="${banda}" height="${ih + 18 + m.b}" fill="transparent" data-tip="${d.m}" data-m="${d.m}" tabindex="0" role="button" aria-label="${periodoTxt(d.m)}: ${d.total} servicios" class="viz-hit"/>`;
   });
-  el.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Servicios por mes, histórico y proyección">
+  el.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="Servicios por mes, histórico y proyección">
     <defs><pattern id="rayas" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#F3E9F8"/><line x1="0" y1="0" x2="0" y2="6" stroke="${VIZ.real}" stroke-width="2"/></pattern></defs>
     ${g}${marcas}<line x1="${m.l}" x2="${W - m.r}" y1="${y(0)}" y2="${y(0)}" stroke="#D9D0E0" stroke-width="1"/></svg>`;
   conectarTips(el, datos);
@@ -211,7 +212,7 @@ function barrasLista(filas, max = 6) {
       <span class="pb-val">${nfmt(f.n)}</span></${f.accion ? 'button' : 'div'}>`).join('');
 }
 // Abrir una lista ya filtrada desde el panorama
-function irBitacoras(f = {}) { FILTRO.bitacoras = { q: '', m: '', cod: '', plan: '', est: '', al: '', ...f, p: 1 }; location.hash === '#/bitacoras' ? router() : (location.hash = '#/bitacoras'); }
+function irBitacoras(f = {}) { FILTRO.bitacoras = { q: '', m: '', cod: '', plan: '', est: '', al: '', tipo: '', ips: '', ...f, p: 1 }; location.hash === '#/bitacoras' ? router() : (location.hash = '#/bitacoras'); }
 function irClientes(f = {}) { FILTRO.clientes = { q: '', cod: '', ips: '', anexos: '', ...f, p: 1 }; location.hash === '#/clientes' ? router() : (location.hash = '#/clientes'); }
 
 /* ---- Panorama: visión general para decidir rápido (el detalle vive en Registros, Bitácoras, Clientes y Agenda) ---- */
@@ -242,7 +243,7 @@ function viewDashboard(param = '') {
   // Distribución del mes
   const sumar = clave => { const r = {}; delMes.forEach(x => { const k = clave(x); r[k] = (r[k] || 0) + fechasDe(x.b).length; }); return Object.entries(r).map(([k, n]) => ({ k, n })).sort((a, b) => b.n - a.n); };
   const porCodigo = sumar(x => codigoDe(x.b, x.c) || 'Sin código').map(({ k, n }) => ({ etiqueta: k, titulo: descCodigo(k) || k, n, accion: `irBitacoras(${esc(JSON.stringify({ m: mes, cod: k }))})` }));
-  const porIps = sumar(x => ipsCanon(x.c?.ips)).map(({ k, n }) => ({ etiqueta: k, n, accion: `irClientes(${esc(JSON.stringify({ ips: k }))})` }));
+  const porIps = sumar(x => ipsCanon(x.c?.ips)).map(({ k, n }) => ({ etiqueta: k, n, accion: `irBitacoras(${esc(JSON.stringify({ m: mes, ips: k }))})` }));
 
   const opMeses = [...new Set([...mesesConDatos(), actual, mesMas(actual, 1), mes])].sort().reverse();
   const deltaTxt = dAnt.total || dSel.total
@@ -253,7 +254,7 @@ function viewDashboard(param = '') {
     </button>`;
   const pend = (n, icono, texto, accion, tono = 'warn') => `
     <button type="button" class="pend ${n ? tono : 'ok'}" onclick="${accion}" ${n ? '' : 'disabled'}>
-      <span class="pend-n">${n || '✓'}</span><span class="pend-t">${icono} ${texto}</span><span class="pend-go" aria-hidden="true">${n ? '→' : ''}</span></button>`;
+      <span class="pend-n">${n || '✓'}</span><span class="pend-t">${n ? icono + ' ' : ''}${n ? texto : 'Sin pendientes: ' + texto.replace(/^con /, '')}</span><span class="pend-go" aria-hidden="true">${n ? '→' : ''}</span></button>`;
 
   app.innerHTML = `
     <div class="head dash-head"><div><h1>Panorama</h1><p class="sub">${periodoTxt(mes)} · ${esc(DB.config.eps)}</p></div>
@@ -265,9 +266,9 @@ function viewDashboard(param = '') {
     <div class="kpis">
       ${kpi({ accion: `location.hash='#/registros?m=${mes}'`, lbl: 'Servicios del mes', val: nfmt(dSel.total), hint: deltaTxt })}
       ${kpi({ accion: `irBitacoras({ m: '${mes}' })`, lbl: 'Pacientes con servicio', val: nfmt(dSel.pac), hint: `${delMes.length} bitácora${delMes.length === 1 ? '' : 's'}` })}
-      ${kpi({ accion: `irBitacoras({ m: '${mes}' })`, lbl: 'Listas para entregar', val: `${listas}<small> / ${delMes.length}</small>`, tono: delMes.length && listas === delMes.length ? 'ok' : '',
+      ${kpi({ accion: `irBitacoras({ m: '${mes}', tipo: 'listas' })`, lbl: 'Listas para entregar', val: `${listas}<small> / ${delMes.length}</small>`, tono: delMes.length && listas === delMes.length ? 'ok' : '',
         hint: 'con firma, # ID y sin errores', extra: `<div class="meter" role="img" aria-label="${pctListas}% listas"><span style="width:${pctListas}%"></span></div>` })}
-      ${kpi({ accion: `irClientes({ anexos: 'faltan' })`, lbl: 'Sin firma o # ID', val: nfmt(sinFirma.length), tono: sinFirma.length ? 'warn' : 'ok',
+      ${kpi({ accion: `irBitacoras({ m: '${mes}', est: 'faltan' })`, lbl: 'Sin firma o # ID', val: nfmt(sinFirma.length), tono: sinFirma.length ? 'warn' : 'ok',
         hint: sinFirma.length ? `de ${pacMes.length} pacientes del mes` : 'todos completos ✓' })}
     </div>
 
@@ -284,10 +285,10 @@ function viewDashboard(param = '') {
         <div class="pac-head"><div><h2>Qué atender</h2><small class="muted">${periodoTxt(mes)}</small></div></div>
         <div class="pend-lista">
           ${pend(conErr, '⛔', `bitácora${conErr === 1 ? '' : 's'} con errores`, `irBitacoras({ m: '${mes}', al: 'error' })`, 'err')}
-          ${pend(sinFirma.length, '✍️', `paciente${sinFirma.length === 1 ? '' : 's'} sin firma o # ID`, `irClientes({ anexos: 'faltan' })`)}
-          ${pend(festivos, '📅', 'con servicios en festivo o domingo', `irBitacoras({ m: '${mes}', al: 'aviso' })`)}
-          ${pend(arrastre, '🔁', 'con posible arrastre de Excel', `irBitacoras({ m: '${mes}', al: 'aviso' })`)}
-          ${pend(horas, '🕑', 'con horas para revisar', `irBitacoras({ m: '${mes}', al: 'aviso' })`)}
+          ${pend(sinFirma.length, '✍️', `paciente${sinFirma.length === 1 ? '' : 's'} sin firma o # ID`, `irBitacoras({ m: '${mes}', est: 'faltan' })`)}
+          ${pend(festivos, '📅', 'con servicios en festivo o domingo', `irBitacoras({ m: '${mes}', tipo: 'festivo' })`)}
+          ${pend(arrastre, '🔁', 'con posible arrastre de Excel', `irBitacoras({ m: '${mes}', tipo: 'arrastre' })`)}
+          ${pend(horas, '🕑', 'con horas para revisar', `irBitacoras({ m: '${mes}', tipo: 'horas' })`)}
           ${pend(agendadas.length, '🗓️', agendadas.length ? `firma${agendadas.length === 1 ? '' : 's'} agendada${agendadas.length === 1 ? '' : 's'} · próxima ${fechaLarga(agendadas[0].agendaFirma)}` : 'firmas agendadas', `location.hash='#/agenda'`, 'info')}
         </div>
         ${delMes.length ? `<button type="button" class="btn sm" style="margin-top:12px" onclick="exportarLote('${mes}')">⬇ Exportar lote de ${periodoTxt(mes)}</button>` : ''}
@@ -372,7 +373,7 @@ const ib = (n, etiqueta, accion, extra = '') => accion.startsWith('#')
   : `<button type="button" class="ib ${extra}" onclick="${accion}" title="${etiqueta}" aria-label="${etiqueta}">${ico(n)}</button>`;
 
 // Filtros y página de cada lista (se conservan al refrescar en tiempo real)
-const FILTRO = { clientes: { q: '', cod: '', ips: '', anexos: '', p: 1 }, bitacoras: { q: '', m: '', cod: '', plan: '', est: '', al: '', p: 1 } };
+const FILTRO = { clientes: { q: '', cod: '', ips: '', anexos: '', p: 1 }, bitacoras: { q: '', m: '', cod: '', plan: '', est: '', al: '', tipo: '', ips: '', p: 1 } };
 const codigosCliente = c => [...new Set([c.codigo, ...DB.bitacoras.filter(b => b.clienteId === c.id).map(b => codigoDe(b, c))].filter(Boolean))];
 function viewClientes() {
   const F = FILTRO.clientes, q = sinTildes(F.q);
@@ -403,7 +404,7 @@ function viewClientes() {
       <tr><th>Paciente</th><th>Firma a nombre de</th><th>Ruta</th><th>Código</th><th>Firma · # ID</th><th></th></tr>
       ${pg.items.map(c => `<tr>
         <td><b>${esc(c.paciente)}</b><br><small class="muted">CC ${esc(c.docPaciente)}</small></td>
-        <td>${esc(nombreFirmante(c) || '—')}<br><small class="muted">${esPaciente(c) ? 'Paciente' : 'Acudiente'}${docFirmante(c) ? ' · CC ' + esc(docFirmante(c)) : ''}</small></td>
+        <td>${nombreFirmante(c) ? esc(nombreFirmante(c)) : '<span class="muted">Sin firmante registrado</span>'}<br><small class="muted">${!nombreFirmante(c) ? '' : esPaciente(c) ? 'Paciente' : 'Acudiente'}${docFirmante(c) ? ' · CC ' + esc(docFirmante(c)) : ''}</small></td>
         <td><small><b>${esc(ipsCanon(c.ips))}</b><br>${esc(c.origen)}<br>${hora12(c.horaIda)} / ${hora12(c.horaRegreso)}</small></td>
         <td>${codigosCliente(c).map(k => `<span class="badge b-mute" title="${esc(descCodigo(k))}">${esc(k)}</span>`).join(' ') || '—'}</td>
         <td>${miniAnexos(c)}<br><small>${[c.firma?.original && `<a href="${c.firma.original}" target="_blank">anexo firma</a>`, c.firmaId?.original && `<a href="${c.firmaId.original}" target="_blank">anexo # ID</a>`].filter(Boolean).join(' · ')}</small></td>
@@ -650,7 +651,8 @@ function viewRegistros(qs = '') {
         </div>
       </div>`; }).join('')
       + paginadorHtml(pgReg, 'pacientes')
-      : `<div class="card empty">No hay registros ${mes === 'todos' ? '' : 'en ' + periodoTxt(mes)}${cid ? ' para este paciente' : ''}.</div>`}`;
+      : `<div class="card empty">No hay registros${mes === 'todos' ? '' : ' en ' + periodoTxt(mes)}${cid ? ' para este paciente' : ''}${buscar ? ` que coincidan con «${esc(p.get('q'))}»` : ''}.
+          ${buscar || cid || mes === 'todos' ? '<br><button class="btn sm" onclick="__irReg({ c: \'\', q: \'\' })" style="margin-top:8px">Limpiar filtros</button>' : ''}</div>`}`;
   enlazarPaginador(app, n => ir({ p: n }));
   // Plegar / desplegar pacientes: la tabla se arma solo al abrir y el estado se recuerda al refrescar en vivo
   const abrir = (card, si) => {
@@ -696,6 +698,13 @@ function agregarFecha(cid, mes) {
 }
 
 /* ================= Bitácoras ================= */
+// Filtros de revisión que usa el Panorama ("Qué atender" y "Listas para entregar")
+const TIPO_REV = {
+  festivo: { txt: '📅 Festivo o domingo', f: (b, c, al) => al.some(a => /festivo|domingo/i.test(a.texto)) },
+  arrastre: { txt: '🔁 Posible arrastre de Excel', f: (b, c, al) => al.some(a => /arrastre/i.test(a.texto)) },
+  horas: { txt: '🕑 Horas para revisar', f: (b, c, al) => al.some(a => /Horas poco comunes|Regreso igual|Hora no válida/i.test(a.texto)) },
+  listas: { txt: '✅ Listas para entregar', f: (b, c, al) => (b.estado === 'firmado' || (b.modoFirma === 'digital' && anexosCompletos(c))) && !al.some(a => a.nivel === 'error') },
+};
 function viewBitacoras(param = '') {
   const F = FILTRO.bitacoras, qs = new URLSearchParams(String(param).replace(/^\?/, ''));
   if (qs.get('m')) { if (mesValido(qs.get('m'))) { F.m = qs.get('m'); F.p = 1; } history.replaceState(null, '', '#/bitacoras'); }
@@ -705,7 +714,7 @@ function viewBitacoras(param = '') {
   const lista = conAl.filter(({ b, c, al }) => (!F.m || b.periodo === F.m) && (!F.cod || codigoDe(b, c) === F.cod) && (!F.plan || (b.plan || 'sin') === F.plan)
       && (!q || sinTildes(`${c?.paciente} ${c?.docPaciente}`).includes(q))
       && (!F.est || (F.est === 'firmado' ? b.estado === 'firmado' : F.est === 'faltan' ? b.modoFirma === 'digital' && !anexosCompletos(c) : b.estado !== 'firmado'))
-      && (!F.al || al.some(a => a.nivel === F.al)))
+      && (!F.al || al.some(a => a.nivel === F.al)) && (!F.ips || ipsCanon(c?.ips) === F.ips) && (!F.tipo || TIPO_REV[F.tipo]?.f(b, c, al)))
     .sort((x, y) => y.b.periodo.localeCompare(x.b.periodo) || (x.c?.paciente || '').localeCompare(y.c?.paciente || ''));
   const pg = paginar(lista, F.p, 25);
   NAV.bitacoras = lista.map(x => x.b.id); // orden para "‹ Anterior / Siguiente ›" dentro de cada bitácora
@@ -741,13 +750,16 @@ function viewBitacoras(param = '') {
       <label>Estado<select id="be"><option value="">Todos</option>${opt('pendiente', F.est, 'Pendientes')}${opt('faltan', F.est, 'Les falta firma o # ID')}${opt('firmado', F.est, 'Firmadas')}</select></label>
       <label>Revisión<select id="ba"><option value="">Todas</option>${opt('error', F.al, '⛔ Con errores')}${opt('aviso', F.al, '⚠️ Con avisos')}</select></label>
     </div>
+    ${F.tipo || F.ips ? `<div class="chips">${F.tipo ? `<span class="chip chip-filtro">${TIPO_REV[F.tipo]?.txt || ''} <button class="x" data-sin-filtro="tipo" aria-label="Quitar este filtro">✕</button></span>` : ''}
+      ${F.ips ? `<span class="chip chip-filtro">IPS: ${esc(F.ips)} <button class="x" data-sin-filtro="ips" aria-label="Quitar este filtro">✕</button></span>` : ''}</div>` : ''}
     <div class="card">${pg.total ? `<div class="tabla-scroll"><table class="list bits">
       <tr><th>Paciente</th><th>Código</th><th>Serv.</th><th>Firma</th><th>Estado</th><th>Revisión</th><th></th></tr>${filasHtml}</table></div>${paginadorHtml(pg, 'bitácoras')}`
       : `<div class="empty">${DB.bitacoras.length ? 'Ninguna bitácora coincide con los filtros. <button class="btn sm" id="blimpiar">Limpiar filtros</button>' : 'Aún no hay bitácoras. Importe los PDF de una entrega o cree una nueva.'}</div>`}</div>`;
   const set = cambios => { Object.assign(FILTRO.bitacoras, cambios, 'p' in cambios ? {} : { p: 1 }); viewBitacoras(); };
   let t; $('#bq').oninput = e => { clearTimeout(t); t = setTimeout(() => { set({ q: e.target.value.trim() }); const f = $('#bq'); f.focus(); f.setSelectionRange(f.value.length, f.value.length); }, 300); };
   [['#bm', 'm'], ['#bc', 'cod'], ['#bp', 'plan'], ['#be', 'est'], ['#ba', 'al']].forEach(([sel, k]) => $(sel).onchange = e => set({ [k]: e.target.value }));
-  $('#blimpiar')?.addEventListener('click', () => set({ q: '', m: '', cod: '', plan: '', est: '', al: '' }));
+  $('#blimpiar')?.addEventListener('click', () => set({ q: '', m: '', cod: '', plan: '', est: '', al: '', tipo: '', ips: '' }));
+  $$('[data-sin-filtro]').forEach(x => x.onclick = () => set({ [x.dataset.sinFiltro]: '' }));
   enlazarPaginador(app, p => set({ p }));
 }
 
@@ -776,8 +788,7 @@ function viewBitacora(param = '') {
     <div class="head page-tools"><div><h1>${nueva ? 'Nueva bitácora' : `Bitácora · ${esc(cliente(b.clienteId)?.paciente || '')}`}</h1>
         <p class="sub">${nueva ? 'Siga los pasos. Ruta, horas y código salen del paciente: usted solo elige el paciente y marca los días.' : 'Cambie lo que necesite; el documento de abajo se actualiza al instante.'}
         <span id="archivoLinea" hidden><br>📄 Se descarga como <b id="archivo"></b></span></p></div>
-      <div class="row">${nueva ? '' : '<button class="btn danger" id="del">Eliminar</button>'}
-        <span id="sucio" class="badge b-warn" hidden>Cambios sin guardar</span></div></div>
+      <div class="row"><span id="sucio" class="badge b-warn" hidden>Cambios sin guardar</span></div></div>
     <input type="hidden" id="cli" value="${esc(b.clienteId)}">
     <div class="pasos page-tools">
       ${paso(1, '¿Para qué paciente?', 'Busque por nombre o documento entre los pacientes registrados, o cree uno nuevo.', '<div id="pacSel"></div>')}
@@ -809,7 +820,7 @@ function viewBitacora(param = '') {
       </div>
       ${paso(5, 'Revise y guarde', 'La app revisa festivos, horas y datos faltantes. Guarde, descargue el PDF o imprima.', `
         <div id="alertas"></div>
-        <div class="row paso-fin"><button class="btn" id="save">Guardar</button>
+        <div class="row paso-fin">${nueva ? '' : '<button class="btn sm danger paso-borrar" id="del">🗑 Eliminar bitácora</button>'}<button class="btn" id="save">Guardar</button>
           <button class="btn" id="pdfTNA" title="Descarga el PDF con el nombre de entrega (TNA_…)">⬇ PDF</button>
           <button class="btn primary" id="print">Imprimir</button></div>`)}
     </div>
@@ -1092,22 +1103,24 @@ function renderDoc(b, editable = false, edicion = false, POR_HOJA = 23) {
 function viewAgenda() {
   const list = [...DB.bitacoras].sort((a, b) => (a.agendaFirma || '9999').localeCompare(b.agendaFirma || '9999'));
   const pend = list.filter(b => b.estado !== 'firmado'), hechas = list.filter(b => b.estado === 'firmado');
+  const pgP = paginar(pend, AGENDA_PAG, 20);
   const fila = b => { const c = cliente(b.clienteId), e = estadoFirma(b); return `<tr>
-    <td><b>${fechaLarga(b.agendaFirma)}</b></td>
-    <td>${esc(nombreFirmante(c) || '—')}<br><small class="muted">${esc(c?.paciente)}</small></td>
-    <td>${periodoTxt(b.periodo)} · ${b.fechas.length} servicios</td>
+    <td><b>${esc(c?.paciente || '—')}</b><br><small class="muted">${nombreFirmante(c) ? 'Firma: ' + esc(nombreFirmante(c)) : 'Sin firmante registrado'} · ${periodoTxt(b.periodo)} · ${fechasDe(b).length} servicios</small></td>
+    <td>${b.agendaFirma ? `<b>${fechaLarga(b.agendaFirma)}</b>` : '<span class="badge b-mute">Sin agendar</span>'}</td>
     <td>${modoBadge(b)}</td><td><span class="badge ${e.cls}">${e.txt}</span></td>
     <td style="text-align:right;white-space:nowrap">
-      <input type="date" value="${b.agendaFirma || ''}" onchange="agendar('${b.id}', this.value)" aria-label="Fecha de firma">
+      <input type="date" value="${esc(b.agendaFirma || '')}" onchange="agendar('${b.id}', this.value)" aria-label="Fecha de firma de ${esc(c?.paciente || '')}">
       ${b.agendaFirma ? `<button class="btn sm" onclick="agendar('${b.id}', '')" title="Quitar fecha agendada">✕</button>` : ''}
       ${b.modoFirma === 'digital' && !anexosCompletos(c) ? `<button class="btn sm" onclick="capturarFirma('${c.id}')">📎 Adjuntar ${faltantes(c).join(' y ')}</button>` : ''}
       ${b.estado !== 'firmado' ? `<button class="btn sm primary" onclick="marcar('${b.id}','firmado')">Marcar firmado</button>` : `<button class="btn sm" onclick="marcar('${b.id}','pendiente')">Reabrir</button>`}
       <a class="btn sm" href="#/bitacora/${b.id}">Abrir</a></td></tr>`; };
   app.innerHTML = `
     <div class="head"><div><h1>Agenda de firmas</h1><p class="sub">Programa cuándo se recoge la firma: automática con la firma adjunta o a mano en papel</p></div></div>
-    <div class="card"><h2>Pendientes (${pend.length})</h2>${pend.length ? `<table class="list">${pend.map(fila).join('')}</table>` : '<div class="empty">Nada pendiente 🎉</div>'}</div>
-    <div class="card"><h2>Firmadas (${hechas.length})</h2>${hechas.length ? `<table class="list">${hechas.map(fila).join('')}</table>` : '<div class="empty">—</div>'}</div>`;
+    <div class="card"><h2>Pendientes (${pend.length})</h2>${pend.length ? `<table class="list">${pgP.items.map(fila).join('')}</table>${paginadorHtml(pgP, 'pendientes')}` : '<div class="empty">Nada pendiente 🎉</div>'}</div>
+    <div class="card"><h2>Firmadas (${hechas.length})</h2>${hechas.length ? `<table class="list">${hechas.slice(0, 20).map(fila).join('')}</table>${hechas.length > 20 ? `<p class="muted">… y ${hechas.length - 20} más (búsquelas en Bitácoras → Estado: Firmadas)</p>` : ''}` : '<div class="empty">Aún no hay bitácoras firmadas</div>'}</div>`;
+  enlazarPaginador(app, n => { AGENDA_PAG = n; viewAgenda(); });
 }
+let AGENDA_PAG = 1;
 async function agendar(id, fecha) { await api('PUT', 'bitacoras/' + id, { agendaFirma: fecha }); toast(fecha ? 'Firma agendada' : 'Fecha de agenda quitada'); router(); }
 async function marcar(id, estado) { await api('PUT', 'bitacoras/' + id, { estado }); toast(estado === 'firmado' ? 'Marcada como firmada' : 'Reabierta'); router(); }
 
