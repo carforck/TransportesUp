@@ -236,6 +236,14 @@ Pensado para no pasarse de los límites gratuitos (Supabase: 1 GB de archivos y 
 
 Los scripts leen sus variables de `.env.local` (ver `.env.example`).
 
+## Importación masiva, revisión y entrega por lote (`public/lote.js`)
+
+- **Importar PDF** (uno o toda la carpeta de una entrega, `TNA_<NIT>_<NOMBRE>[ PBS| NO PBS].pdf`): pdf.js lee la tabla por columnas (cada fila se ancla en el ITEM). De cada archivo salen paciente, ID, ruta, IPS, horas, código, PBS/NO PBS y fechas; lo que cambia en una fecha (otra hora o dirección) queda como corrección de esa fila. En cada fecha la ida es el tramo más temprano. Todo se guarda en **una sola escritura** (`POST /api/lote`).
+- **Revisión automática** (al importar, en la lista y en cada bitácora): festivos de Colombia (Ley Emiliani + Semana Santa), domingos/sábados, horas no válidas o poco comunes, regreso antes de la ida, *arrastre de Excel* (horas o direcciones que avanzan en pasos fijos), código fuera de catálogo, código POS/NO POS vs PBS/NO PBS, firma o # ID faltante.
+- **Catálogos editables** (Campos fijos): códigos de tecnología (la descripción del documento sale de aquí) e IPS (agrupa las distintas formas de escribir la misma sede).
+- **Exportar lote**: ZIP del mes con un PDF por bitácora, nombrado como lo entrega la empresa, + `RESUMEN <MES>.csv`. Las hojas se paginan según el alto real de las filas para que siempre quepan en carta horizontal.
+- Listas con **filtros y paginación**; bitácoras **agrupadas por mes**; en cada bitácora **← Volver / ‹ Anterior / Siguiente ›** (Alt + ← / →).
+
 ## Privacidad y respaldo
 
 - La app maneja **datos de salud** (nombres, documentos, firmas). Por eso `data/`, los PDF originales y las imágenes fuente están en `.gitignore` y **nunca se suben al repositorio**.
