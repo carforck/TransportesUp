@@ -87,7 +87,9 @@ TransporUp/
 │   ├── app.js         # API REST, anexos (firma / # ID) y tiempo real, sin servidor propio
 │   └── store.js       # Almacenamiento intercambiable (hoy: archivos; mañana: nube)
 ├── vercel.json        # Salida estática = public/, reescrituras /api/* y /firmas/* → api/index
-├── .vercelignore      # Impide subir data/ y PDFs reales en un despliegue
+├── .vercelignore      # Impide subir data/, .env* y PDFs reales en un despliegue
+├── .env.example       # Variables de Supabase (sin valores)
+├── supabase/migrations/001_estado_y_firmas.sql   # Tabla app_estado + bucket privado "firmas" 
 ├── package.json       # Scripts: dev (con recarga) y start
 ├── public/            # Frontend: SPA en JavaScript puro
 │   ├── index.html     # Estructura, menú lateral colapsable, recarga en vivo
@@ -178,9 +180,25 @@ El proyecto ya está estructurado para que el despliegue pase sin errores:
 | Datos | Sin almacenamiento configurado, la app arranca en **modo demostración** (`/tmp`, temporal) y lo avisa en pantalla. **Nunca falla por disco de solo lectura.** |
 | Seguridad | `.vercelignore` impide subir `data/` y los PDF reales. |
 
-**Antes de usarla en producción en Vercel falta:**
+### Almacenamiento permanente: Supabase
 
-1. **Almacenamiento permanente**: implementar en `lib/store.js` un driver en la nube con la misma interfaz. Por ejemplo, una base del Marketplace de Vercel (Postgres o Redis) para `db.json` y **Vercel Blob privado** para las firmas. El resto de la app no cambia.
+`lib/store.js` incluye un **driver de Supabase** que se activa solo cuando existen las variables `SUPABASE_URL` y `SUPABASE_SECRET_KEY`. No usa dependencias: habla con la API REST y Storage mediante `fetch`.
+
+- **Datos**: tabla `app_estado`, con una fila JSON versionada. Cada guardado actualiza solo si nadie guardó antes (control optimista por `version`). Si dos personas guardan a la vez, la app relee y reintenta, así que no se pierden cambios.
+- **Firmas e # ID**: bucket **privado** `firmas` de Supabase Storage. Las imágenes se sirven solo a través de la función.
+- **Seguridad**: RLS activo y sin políticas, con permisos solo para `service_role`. La clave secreta vive únicamente en el servidor.
+
+**Puesta en marcha:**
+
+1. Supabase → SQL Editor: ejecutar `supabase/migrations/001_estado_y_firmas.sql` (crea la tabla y el bucket).
+2. Variables de entorno, con los nombres de `.env.example`:
+   - **local**: crear `.env.local`;
+   - **Vercel**: Settings → Environment Variables.
+3. Al arrancar, `/api/info` debe responder `"almacenamiento":"supabase"`.
+
+**Antes de usarla en producción en Vercel falta además:**
+
+1. **Migrar los datos reales** de `data/` a Supabase, cuando se decida.
 2. **Autenticación**: la app no tiene usuarios. En internet es obligatorio protegerla, por ejemplo con Vercel Authentication o un inicio de sesión propio.
 3. Elegir la cuenta o el equipo de Vercel y conectar el repositorio.
 

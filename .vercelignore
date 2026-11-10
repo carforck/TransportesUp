@@ -6,3 +6,5 @@ recursos/
 *.pdf
 *.log
 .vscode/
+.env*
+!.env.example

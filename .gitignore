@@ -14,6 +14,7 @@ node_modules/
 .vscode/
 .idea/
 .env*
+!.env.example
 
 # PDFs reales generados o descargados (soportes, bitácoras firmadas)
 recursos/

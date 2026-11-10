@@ -4,6 +4,13 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+// Variables locales opcionales (p. ej. SUPABASE_URL / SUPABASE_SECRET_KEY) desde .env.local, que NUNCA va a git
+try {
+  for (const l of fs.readFileSync(path.join(__dirname, '.env.local'), 'utf8').split('\n')) {
+    const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(l);
+    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+  }
+} catch {}
 const { crearApp } = require('./lib/app');
 
 const PORT = process.env.PORT || 3000;
@@ -36,4 +43,4 @@ http.createServer(async (req, res) => {
   if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(PUB, 'index.html');
   res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
   fs.createReadStream(file).pipe(res);
-}).listen(PORT, () => console.log(`Transportes UP → http://localhost:${PORT} · datos: ${app.store.dir}${app.store.persistente ? '' : ' (TEMPORAL)'}`));
+}).listen(PORT, () => console.log(`Transportes UP → http://localhost:${PORT} · almacenamiento: ${app.store.nombre} (${app.store.dir})${app.store.persistente ? '' : ' TEMPORAL'}`));
