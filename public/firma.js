@@ -3,7 +3,7 @@
    Uso: const w = FirmaWidget(el, { actual }); const r = w.valor();
         r = null (sin cambios) | { error } | { tipo, data (PNG transparente), original (anexo) } */
 (function () {
-  const TIPOS = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
+  const TIPOS = ['image/png', 'image/jpeg', 'image/webp'];
   const MAX_SUBIDA = 15 * 1024 * 1024;
   const TINTAS = { original: null, azul: [13, 42, 138], negro: [20, 20, 20] };
 
@@ -257,7 +257,7 @@
       if (!file) return;
       q('[data-ajustes]').hidden = false;
       estado.className = 'estado'; estado.textContent = 'Procesando…'; resultado = null;
-      if (!TIPOS.includes(file.type)) { estado.className = 'estado err'; estado.textContent = '✗ Formato no soportado. Use PNG, JPG, WEBP o SVG.'; return; }
+      if (!TIPOS.includes(file.type)) { estado.className = 'estado err'; estado.textContent = '✗ Formato no soportado. Use una foto PNG, JPG o WEBP.'; return; }
       if (file.size > MAX_SUBIDA) { estado.className = 'estado err'; estado.textContent = '✗ El archivo es muy grande (máx. 15 MB).'; return; }
       try {
         img = await cargarImagen(file); recorte = null; pintarCaja();
