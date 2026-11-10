@@ -109,8 +109,9 @@ function datosMes(m) {
   }
   return { m, real, prog, total: real + prog, pac: pac.size };
 }
-// Proyección: promedio de servicios de los 3 meses anteriores al mes proyectado
-const proyeccion = m => { const prev = [1, 2, 3].map(d => datosMes(mesMas(m, -d)).total); return Math.round(prev.reduce((a, b) => a + b, 0) / 3); };
+// Proyección: promedio de servicios de los meses con datos entre los 3 anteriores al mes proyectado
+// (solo meses con datos: un mes sin bitácoras cargadas no es un mes con cero servicios)
+const proyeccion = m => { const prev = [1, 2, 3].map(d => datosMes(mesMas(m, -d)).total).filter(Boolean); return prev.length ? Math.round(prev.reduce((a, b) => a + b, 0) / prev.length) : 0; };
 
 /* ---- Tooltip compartido (texto con textContent: los nombres son datos) ---- */
 function tip() { let t = $('#viztip'); if (!t) { t = document.createElement('div'); t.id = 'viztip'; t.className = 'viz-tip'; t.setAttribute('role', 'tooltip'); t.hidden = true; document.body.appendChild(t); } return t; }
@@ -169,7 +170,7 @@ function graficoMeses(el, meses, sel, alClic) {
     marcas += `<text x="${cx}" y="${H - 12}" text-anchor="middle" class="viz-ax ${esSel ? 'viz-sel' : ''}">${mesCorto(d.m)}</text>`;
     if (mostrarAnio) marcas += `<text x="${cx}" y="${H - 1}" text-anchor="middle" class="viz-ax viz-anio">${anio}</text>`;
     datos[d.m] = [[`${nfmt(d.total)} servicios`, periodoTxt(d.m)], ...(d.real ? [[nfmt(d.real), 'realizados', VIZ.real]] : []),
-      ...(d.prog ? [[nfmt(d.prog), 'programados', VIZ.prog]] : []), ...(d.proy > d.total ? [[`~${d.proy}`, 'proyección (promedio 3 meses)', VIZ.real]] : []),
+      ...(d.prog ? [[nfmt(d.prog), 'programados', VIZ.prog]] : []), ...(d.proy > d.total ? [[`~${d.proy}`, 'proyección (promedio de meses con datos)', VIZ.real]] : []),
       [`${d.pac}`, d.pac === 1 ? 'paciente' : 'pacientes']];
     marcas += `<rect x="${m.l + banda * i}" y="${m.t - 18}" width="${banda}" height="${ih + 18 + m.b}" fill="transparent" data-tip="${d.m}" data-m="${d.m}" tabindex="0" role="button" aria-label="${periodoTxt(d.m)}: ${d.total} servicios" class="viz-hit"/>`;
   });
@@ -180,144 +181,113 @@ function graficoMeses(el, meses, sel, alClic) {
   el.querySelectorAll('[data-m]').forEach(r => { r.onclick = () => alClic(r.dataset.m); r.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); alClic(r.dataset.m); } }; });
 }
 
-/* ---- Gráfico 2: actividad diaria del mes (calendario de calor) ---- */
-function calorMes(m) {
-  const [y, mm] = m.split('-').map(Number), n = new Date(y, mm, 0).getDate(), off = (new Date(y, mm - 1, 1).getDay() + 6) % 7, h = hoy();
-  const porDia = {};
-  for (const b of DB.bitacoras.filter(b => b.periodo === m)) for (const f of fechasDe(b)) (porDia[f] ||= []).push(cliente(b.clienteId)?.paciente || '—');
-  const datos = {}; let celdas = ['L', 'M', 'X', 'J', 'V', 'S', 'D'].map(d => `<div class="hm-dow">${d}</div>`).join('') + '<div></div>'.repeat(off);
-  for (let d = 1; d <= n; d++) {
-    const f = `${m}-${String(d).padStart(2, '0')}`, lista = porDia[f] || [], k = Math.min(3, lista.length);
-    const dia = DIAS[new Date(f + 'T12:00').getDay()];
-    datos[f] = [[lista.length ? `${lista.length} ${lista.length === 1 ? 'paciente' : 'pacientes'}` : 'Sin servicio', `${dia} ${d} de ${MESES[mm - 1]}`],
-      ...lista.slice(0, 6).map(nm => ['•', nm]), ...(lista.length > 6 ? [[`+${lista.length - 6}`, 'más']] : [])];
-    celdas += `<div class="hm-c ${k >= 2 ? 'osc' : ''} ${f === h ? 'hoy' : ''} ${f > h && lista.length ? 'fut' : ''}" style="background:${VIZ.calor[k]}" data-tip="${f}" tabindex="0" aria-label="${d}: ${lista.length} servicios">${d}</div>`;
-  }
-  return { html: `<div class="hm">${celdas}</div>`, datos, porDia };
+/* ---- Barras horizontales simples (distribución del mes) ---- */
+function barrasLista(filas, max = 6) {
+  if (filas.length === max + 1) max++; // no agrupar un solo elemento en "Otros"
+  const top = filas.slice(0, max), resto = filas.slice(max), mx = Math.max(1, ...filas.map(f => f.n));
+  if (resto.length) top.push({ etiqueta: `Otros (${resto.length})`, n: resto.reduce((s, f) => s + f.n, 0) });
+  return top.map(f => `
+    <${f.accion ? 'button type="button"' : 'div'} class="pb-row" ${f.accion ? `onclick="${f.accion}"` : ''} title="${esc(f.titulo || f.etiqueta)}">
+      <span class="pb-name">${esc(f.etiqueta)}</span>
+      <span class="pb-track"><span class="pb-bar" style="width:${(f.n / mx * 100).toFixed(1)}%"></span></span>
+      <span class="pb-val">${nfmt(f.n)}</span></${f.accion ? 'button' : 'div'}>`).join('');
 }
+// Abrir una lista ya filtrada desde el panorama
+function irBitacoras(f = {}) { FILTRO.bitacoras = { q: '', m: '', cod: '', plan: '', est: '', al: '', ...f, p: 1 }; location.hash === '#/bitacoras' ? router() : (location.hash = '#/bitacoras'); }
+function irClientes(f = {}) { FILTRO.clientes = { q: '', cod: '', ips: '', anexos: '', ...f, p: 1 }; location.hash === '#/clientes' ? router() : (location.hash = '#/clientes'); }
 
-/* ---- Gráfico 3: servicios por paciente en el mes (barras ordenadas) ---- */
-function barrasPacientes(m) {
-  const filas = DB.bitacoras.filter(b => b.periodo === m).map(b => ({ c: cliente(b.clienteId), n: fechasDe(b).length })).filter(x => x.c && x.n)
-    .reduce((acc, x) => { const e = acc.find(a => a.c.id === x.c.id); e ? e.n += x.n : acc.push(x); return acc; }, []).sort((a, b) => b.n - a.n);
-  const top = filas.slice(0, 8), resto = filas.slice(8), max = Math.max(1, ...filas.map(f => f.n));
-  if (resto.length) top.push({ c: { id: '', paciente: `Otros (${resto.length})` }, n: resto.reduce((s, f) => s + f.n, 0) });
-  return { filas: top, html: top.map(f => `
-    <a class="pb-row" ${f.c.id ? `href="#/registros?m=${m}&c=${f.c.id}"` : ''} title="${esc(f.c.paciente)}">
-      <span class="pb-name">${esc(f.c.paciente)}</span>
-      <span class="pb-track"><span class="pb-bar" style="width:${(f.n / max * 100).toFixed(1)}%"></span></span>
-      <span class="pb-val">${f.n}</span></a>`).join('') };
-}
-
+/* ---- Panorama: visión general para decidir rápido (el detalle vive en Registros, Bitácoras, Clientes y Agenda) ---- */
 function viewDashboard(param = '') {
   const q = new URLSearchParams((param.split('?')[1]) || '');
   const actual = hoy().slice(0, 7);
   const mes = q.get('m') || mesPorDefecto();
-  const rango = +(q.get('r') || 6);
-  const ir = cambios => { const n = new URLSearchParams({ m: mes, r: rango, ...cambios }); location.hash = '#/?' + n; };
+  const ir = cambios => { location.hash = '#/?' + new URLSearchParams({ m: mes, ...cambios }); };
   window.__dashIr = ir;
 
-  // Meses del histórico: termina en el mes siguiente al actual (proyección) o al seleccionado si es posterior
+  // Tendencia: 6 meses hasta el siguiente al actual (o hasta el elegido si es posterior), con proyección en los futuros
   const fin = [mesMas(actual, 1), mes].sort().pop();
-  const primeroDatos = mesesConDatos().slice(-1)[0];
-  let n = rango === 0 ? 12 : rango;
-  if (rango === 0 && primeroDatos) { let k = 1, x = fin; while (x > primeroDatos && k < 36) { x = mesMas(x, -1); k++; } n = Math.max(6, k); }
-  const meses = Array.from({ length: n }, (_, i) => mesMas(fin, i - n + 1)).map(m => {
-    const d = datosMes(m); if (m > actual) d.proy = proyeccion(m); return d; });
+  const meses = Array.from({ length: 6 }, (_, i) => mesMas(fin, i - 5)).map(m => { const d = datosMes(m); if (m > actual) d.proy = proyeccion(m); return d; });
 
-  const dSel = datosMes(mes), dAnt = datosMes(mesMas(mes, -1));
-  const delta = dSel.total - dAnt.total;
-  const completos = DB.clientes.filter(anexosCompletos).length, pct = DB.clientes.length ? Math.round(completos / DB.clientes.length * 100) : 0;
-  const pendientes = DB.bitacoras.filter(b => b.estado !== 'firmado' && estadoFirma(b).cls === 'b-warn');
-  const sinAnexos = DB.clientes.filter(c => !anexosCompletos(c));
-  const proximas = DB.bitacoras.filter(b => b.agendaFirma && b.estado !== 'firmado').sort((a, b) => a.agendaFirma.localeCompare(b.agendaFirma));
-  const ahora = new Date();
-  const fechaHoy = `${['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'][ahora.getDay()]} ${ahora.getDate()} de ${MESES[ahora.getMonth()]} de ${ahora.getFullYear()}`;
-  const ICON = {
-    cli: '<path d="M16 11a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm-8 1a3 3 0 1 0-3-3 3 3 0 0 0 3 3zm8 1c-2.7 0-8 1.3-8 4v3h16v-3c0-2.7-5.3-4-8-4zm-8 0c-.3 0-.7 0-1.1.1A4.7 4.7 0 0 1 9 17v3H1v-3c0-2.2 4.4-4 7-4z"/>',
-    bit: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zm-1 7V3.5L18.5 9zM8 13h8v2H8zm0 4h8v2H8z"/>',
-    reg: '<path d="M3 5h2v2H3zm4 0h14v2H7zM3 11h2v2H3zm4 0h14v2H7zm-4 6h2v2H3zm4 0h14v2H7z"/>',
-    age: '<path d="M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 16H5V10h14zM7 12h5v5H7z"/>',
-  };
-  const kpi = ({ href, icon, lbl, val, hint, tono = '', extra = '' }) => `
-    <a class="kpi kpi-link ${tono}" href="${href}" title="Ir a ${lbl}">
-      <div class="kpi-top"><span class="kpi-ico"><svg viewBox="0 0 24 24">${ICON[icon]}</svg></span><span class="kpi-go" aria-hidden="true">→</span></div>
-      <div class="lbl">${lbl}</div><div class="val">${val}</div><div class="hint">${hint}</div>${extra}
-    </a>`;
-  const deltaTxt = dAnt.total || dSel.total
-    ? `<span class="delta ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}">${delta > 0 ? '▲' : delta < 0 ? '▼' : '='} ${delta > 0 ? '+' : ''}${delta}</span> vs ${mesCorto(mesMas(mes, -1))}` : 'sin datos del mes anterior';
-  const calor = calorMes(mes), pb = barrasPacientes(mes);
+  // Estado del mes elegido
+  const dSel = datosMes(mes), dAnt = datosMes(mesMas(mes, -1)), delta = dSel.total - dAnt.total;
+  const delMes = DB.bitacoras.filter(b => b.periodo === mes).map(b => ({ b, c: cliente(b.clienteId), al: validarBitacora(b) }));
+  const firmada = x => x.b.estado === 'firmado' || (x.b.modoFirma === 'digital' && anexosCompletos(x.c));
+  const listas = delMes.filter(x => firmada(x) && !x.al.some(a => a.nivel === 'error')).length;
+  const pctListas = delMes.length ? Math.round(listas / delMes.length * 100) : 0;
+  const pacMes = [...new Map(delMes.filter(x => x.c).map(x => [x.c.id, x.c])).values()];
+  const sinFirma = pacMes.filter(c => !anexosCompletos(c));
+  const conErr = delMes.filter(x => x.al.some(a => a.nivel === 'error')).length;
+  const tiene = re => delMes.filter(x => x.al.some(a => re.test(a.texto))).length;
+  const festivos = tiene(/festivo|domingo/i), arrastre = tiene(/arrastre/i), horas = tiene(/Horas poco comunes|Regreso igual|Hora no válida/i);
+  const agendadas = DB.bitacoras.filter(b => b.agendaFirma && b.estado !== 'firmado' && b.agendaFirma >= hoy()).sort((a, b) => a.agendaFirma.localeCompare(b.agendaFirma));
+
+  // Distribución del mes
+  const sumar = clave => { const r = {}; delMes.forEach(x => { const k = clave(x); r[k] = (r[k] || 0) + fechasDe(x.b).length; }); return Object.entries(r).map(([k, n]) => ({ k, n })).sort((a, b) => b.n - a.n); };
+  const porCodigo = sumar(x => codigoDe(x.b, x.c) || 'Sin código').map(({ k, n }) => ({ etiqueta: k, titulo: descCodigo(k) || k, n, accion: `irBitacoras(${esc(JSON.stringify({ m: mes, cod: k }))})` }));
+  const porIps = sumar(x => ipsCanon(x.c?.ips)).map(({ k, n }) => ({ etiqueta: k, n, accion: `irClientes(${esc(JSON.stringify({ ips: k }))})` }));
+
   const opMeses = [...new Set([...mesesConDatos(), actual, mesMas(actual, 1), mes])].sort().reverse();
+  const deltaTxt = dAnt.total || dSel.total
+    ? `<span class="delta ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}">${delta > 0 ? '▲ +' : delta < 0 ? '▼ ' : '= '}${delta}</span> vs ${mesCorto(mesMas(mes, -1))}` : 'sin datos del mes anterior';
+  const kpi = ({ accion, lbl, val, hint, tono = '', extra = '' }) => `
+    <button type="button" class="kpi kpi-link ${tono}" onclick="${accion}">
+      <div class="lbl">${lbl}</div><div class="val">${val}</div><div class="hint">${hint}</div>${extra}<span class="kpi-go" aria-hidden="true">→</span>
+    </button>`;
+  const pend = (n, icono, texto, accion, tono = 'warn') => `
+    <button type="button" class="pend ${n ? tono : 'ok'}" onclick="${accion}" ${n ? '' : 'disabled'}>
+      <span class="pend-n">${n || '✓'}</span><span class="pend-t">${icono} ${texto}</span><span class="pend-go" aria-hidden="true">${n ? '→' : ''}</span></button>`;
 
   app.innerHTML = `
-    <div class="head dash-head"><div><h1>Hola 👋</h1><p class="sub" style="text-transform:none">${fechaHoy} · ${esc(DB.config.eps)}</p></div>
-      <div class="row"><button class="btn" onclick="formCliente()">+ Cliente</button>
-        <button class="btn" onclick="importarLote()" title="Sube una bitácora PDF ya hecha: se leen el paciente y las fechas">⬆ Importar PDF</button>
-        <a class="btn primary" href="#/bitacora/nueva?m=${mes}">+ Nueva bitácora</a></div></div>
-
-    <div class="dash-filtros" role="group" aria-label="Filtros del dashboard">
-      <div class="mes-pick"><button class="icon-btn" id="dPrev" aria-label="Mes anterior">‹</button>
-        <select id="dMes" aria-label="Mes">${opMeses.map(x => `<option value="${x}" ${x === mes ? 'selected' : ''}>${periodoTxt(x)}${x === actual ? ' (actual)' : ''}</option>`).join('')}</select>
-        <button class="icon-btn" id="dNext" aria-label="Mes siguiente">›</button></div>
-      <div class="seg" role="radiogroup" aria-label="Histórico">${[[6, '6 meses'], [12, '12 meses'], [0, 'Todo']].map(([v, t]) => `<button role="radio" aria-checked="${rango === v}" class="${rango === v ? 'on' : ''}" data-r="${v}">${t}</button>`).join('')}</div>
-    </div>
+    <div class="head dash-head"><div><h1>Panorama</h1><p class="sub">${periodoTxt(mes)} · ${esc(DB.config.eps)}</p></div>
+      <div class="dash-filtros" role="group" aria-label="Mes">
+        <div class="mes-pick"><button class="icon-btn" id="dPrev" aria-label="Mes anterior">‹</button>
+          <select id="dMes" aria-label="Mes">${opMeses.map(x => `<option value="${x}" ${x === mes ? 'selected' : ''}>${periodoTxt(x)}${x === actual ? ' (actual)' : ''}</option>`).join('')}</select>
+          <button class="icon-btn" id="dNext" aria-label="Mes siguiente">›</button></div></div></div>
 
     <div class="kpis">
-      ${kpi({ href: `#/registros?m=${mes}`, icon: 'reg', lbl: `Servicios · ${periodoTxt(mes)}`, val: nfmt(dSel.total), hint: `${deltaTxt}<br>${dSel.real} realizados · ${dSel.prog} programados` })}
-      ${kpi({ href: `#/registros?m=${mes}`, icon: 'cli', lbl: 'Pacientes atendidos', val: dSel.pac, hint: `${DB.clientes.length} cliente${DB.clientes.length === 1 ? '' : 's'} registrado${DB.clientes.length === 1 ? '' : 's'}` })}
-      ${kpi({ href: '#/clientes', icon: 'bit', lbl: 'Anexos completos', val: pct + '%', hint: `${completos} de ${DB.clientes.length} con firma e ID`,
-        extra: `<div class="meter" role="img" aria-label="${pct}% con anexos completos"><span style="width:${pct}%"></span></div>` })}
-      ${kpi({ href: '#/agenda', icon: 'age', lbl: 'Firmas pendientes', val: pendientes.length, tono: pendientes.length ? 'warn' : 'ok',
-        hint: pendientes.length ? `${proximas.length} agendada${proximas.length === 1 ? '' : 's'}` : 'Todo al día ✓' })}
+      ${kpi({ accion: `location.hash='#/registros?m=${mes}'`, lbl: 'Servicios del mes', val: nfmt(dSel.total), hint: deltaTxt })}
+      ${kpi({ accion: `irBitacoras({ m: '${mes}' })`, lbl: 'Pacientes con servicio', val: nfmt(dSel.pac), hint: `${delMes.length} bitácora${delMes.length === 1 ? '' : 's'}` })}
+      ${kpi({ accion: `irBitacoras({ m: '${mes}' })`, lbl: 'Listas para entregar', val: `${listas}<small> / ${delMes.length}</small>`, tono: delMes.length && listas === delMes.length ? 'ok' : '',
+        hint: 'con firma, # ID y sin errores', extra: `<div class="meter" role="img" aria-label="${pctListas}% listas"><span style="width:${pctListas}%"></span></div>` })}
+      ${kpi({ accion: `irClientes({ anexos: 'faltan' })`, lbl: 'Sin firma o # ID', val: nfmt(sinFirma.length), tono: sinFirma.length ? 'warn' : 'ok',
+        hint: sinFirma.length ? `de ${pacMes.length} pacientes del mes` : 'todos completos ✓' })}
     </div>
 
-    <div class="card">
-      <div class="pac-head"><div><h2>Servicios por mes</h2><small class="muted">Histórico y proyección · toque un mes para verlo en detalle</small></div>
-        <div class="viz-leg"><span><i style="background:${VIZ.real}"></i>Realizados</span><span><i style="background:${VIZ.prog}"></i>Programados</span><span><i class="rayas"></i>Proyección</span></div></div>
-      <div id="gMeses" class="viz"></div>
-      <p class="viz-nota">Realizados: fechas hasta hoy · Programados: fechas marcadas que aún no llegan · Proyección (~): promedio de servicios de los 3 meses anteriores; es una estimación, no un dato registrado.</p>
-      <details class="viz-tabla"><summary>Ver como tabla</summary>
-        <table class="list"><tr><th>Mes</th><th>Realizados</th><th>Programados</th><th>Total</th><th>Proyección</th><th>Pacientes</th></tr>
-        ${meses.map(d => `<tr><td>${periodoTxt(d.m)}</td><td>${d.real}</td><td>${d.prog}</td><td><b>${d.total}</b></td><td>${d.proy != null ? '~' + d.proy : '—'}</td><td>${d.pac}</td></tr>`).join('')}</table></details>
-    </div>
-
-    <div class="grid2">
-      <div class="card">
-        <div class="pac-head"><div><h2>Actividad diaria · ${periodoTxt(mes)}</h2><small class="muted">Pacientes con servicio cada día</small></div>
-          <div class="viz-leg">${['0', '1', '2', '3+'].map((t, i) => `<span><i style="background:${VIZ.calor[i]}"></i>${t}</span>`).join('')}</div></div>
-        ${calor.html}
+    <div class="dash-grid">
+      <section class="card dash-tend">
+        <div class="pac-head"><div><h2>Tendencia</h2><small class="muted">Servicios por mes · toque un mes para verlo</small></div>
+          <div class="viz-leg"><span><i style="background:${VIZ.real}"></i>Realizados</span><span><i style="background:${VIZ.prog}"></i>Programados</span><span><i class="rayas"></i>Proyección</span></div></div>
+        <div id="gMeses" class="viz"></div>
         <details class="viz-tabla"><summary>Ver como tabla</summary>
-          ${Object.keys(calor.porDia).length ? `<table class="list"><tr><th>Fecha</th><th>Pacientes</th></tr>${Object.entries(calor.porDia).sort().map(([f, l]) => `<tr><td>${fechaDoc(f)}</td><td>${l.length} · ${l.map(esc).join(', ')}</td></tr>`).join('')}</table>` : '<div class="empty">Sin servicios en el mes</div>'}</details>
-      </div>
-      <div class="card">
-        <div class="pac-head"><div><h2>Servicios por paciente</h2><small class="muted">${periodoTxt(mes)} · de mayor a menor</small></div><a class="btn sm" href="#/registros?m=${mes}">Registros →</a></div>
-        ${pb.filas.length ? `<div class="pb">${pb.html}</div>` : '<div class="empty">Sin servicios en el mes</div>'}
-      </div>
+          <table class="list"><tr><th>Mes</th><th>Realizados</th><th>Programados</th><th>Total</th><th>Proyección</th><th>Pacientes</th></tr>
+          ${meses.map(d => `<tr><td>${periodoTxt(d.m)}</td><td>${d.real}</td><td>${d.prog}</td><td><b>${d.total}</b></td><td>${d.proy != null ? '~' + d.proy : '—'}</td><td>${d.pac}</td></tr>`).join('')}</table></details>
+      </section>
+      <section class="card dash-pend">
+        <div class="pac-head"><div><h2>Qué atender</h2><small class="muted">${periodoTxt(mes)}</small></div></div>
+        <div class="pend-lista">
+          ${pend(conErr, '⛔', `bitácora${conErr === 1 ? '' : 's'} con errores`, `irBitacoras({ m: '${mes}', al: 'error' })`, 'err')}
+          ${pend(sinFirma.length, '✍️', `paciente${sinFirma.length === 1 ? '' : 's'} sin firma o # ID`, `irClientes({ anexos: 'faltan' })`)}
+          ${pend(festivos, '📅', 'con servicios en festivo o domingo', `irBitacoras({ m: '${mes}', al: 'aviso' })`)}
+          ${pend(arrastre, '🔁', 'con posible arrastre de Excel', `irBitacoras({ m: '${mes}', al: 'aviso' })`)}
+          ${pend(horas, '🕑', 'con horas para revisar', `irBitacoras({ m: '${mes}', al: 'aviso' })`)}
+          ${pend(agendadas.length, '🗓️', agendadas.length ? `firma${agendadas.length === 1 ? '' : 's'} agendada${agendadas.length === 1 ? '' : 's'} · próxima ${fechaLarga(agendadas[0].agendaFirma)}` : 'firmas agendadas', `location.hash='#/agenda'`, 'info')}
+        </div>
+        ${delMes.length ? `<button type="button" class="btn sm" style="margin-top:12px" onclick="exportarLote('${mes}')">⬇ Exportar lote de ${periodoTxt(mes)}</button>` : ''}
+      </section>
     </div>
 
-    ${resumenMes(mes)}
-
-    <div class="grid2">
-      <div class="card"><div class="pac-head"><h2>Anexos pendientes</h2><a class="btn sm" href="#/clientes">Clientes →</a></div>
-        ${sinAnexos.length ? `<table class="list">${sinAnexos.map(c => `<tr><td>${esc(nombreFirmante(c) || c.paciente)}<br><small class="muted">${esPaciente(c) ? 'Paciente' : 'Acudiente de ' + esc(c.paciente)} · falta ${faltantes(c).join(' y ')}</small></td>
-          <td style="text-align:right;white-space:nowrap"><button class="btn sm primary" onclick="capturarFirma('${c.id}')">📎 Adjuntar</button></td></tr>`).join('')}</table>`
-          : '<div class="empty">Todos los clientes tienen firma e ID ✓</div>'}
-      </div>
-      <div class="card"><div class="pac-head"><h2>Próximas firmas agendadas</h2><a class="btn sm" href="#/agenda">Agenda →</a></div>
-        ${proximas.length ? `<table class="list">${proximas.slice(0, 6).map(b => { const c = cliente(b.clienteId); return `
-          <tr class="click" onclick="location.hash='#/bitacora/${b.id}'"><td><b>${fechaLarga(b.agendaFirma)}</b></td>
-          <td>${esc(nombreFirmante(c) || '—')}<br><small class="muted">${esc(c?.paciente || '')} · ${periodoTxt(b.periodo)}</small></td><td>${modoBadge(b)}</td></tr>`; }).join('')}</table>`
-          : '<div class="empty">No hay firmas agendadas</div>'}
-      </div>
+    <div class="dash-grid dos">
+      <section class="card"><div class="pac-head"><div><h2>Por código</h2><small class="muted">Servicios del mes</small></div></div>
+        ${porCodigo.length ? `<div class="pb">${barrasLista(porCodigo)}</div>` : '<div class="empty">Sin servicios en el mes</div>'}</section>
+      <section class="card"><div class="pac-head"><div><h2>Por IPS</h2><small class="muted">Servicios del mes</small></div></div>
+        ${porIps.length ? `<div class="pb">${barrasLista(porIps)}</div>` : '<div class="empty">Sin servicios en el mes</div>'}</section>
     </div>`;
 
   const pintar = () => graficoMeses($('#gMeses'), meses, mes, m => ir({ m }));
   pintar();
-  conectarTips(app.querySelector('.hm'), calor.datos);
   $('#dMes').onchange = e => ir({ m: e.target.value });
   $('#dPrev').onclick = () => ir({ m: mesMas(mes, -1) });
   $('#dNext').onclick = () => ir({ m: mesMas(mes, 1) });
-  app.querySelectorAll('.seg [data-r]').forEach(bt => bt.onclick = () => ir({ r: bt.dataset.r }));
   // redibuja el gráfico al cambiar el ancho (rotar celular, abrir/cerrar menú fijo)
   window.__dashRO?.disconnect();
   window.__dashRO = new ResizeObserver(() => { if ($('#gMeses')) pintar(); });
@@ -402,6 +372,12 @@ function viewClientes() {
       <label>Código<select id="fcod"><option value="">Todos</option>${codsUsados.map(c => opt(c, F.cod)).join('')}</select></label>
       <label>IPS<select id="fips"><option value="">Todas</option>${ipsUsadas.map(c => opt(c, F.ips)).join('')}</select></label>
       <label>Firma e ID<select id="fan"><option value="">Todos</option>${opt('faltan', F.anexos, `Les falta (${faltan})`)}${opt('completos', F.anexos, 'Completos')}</select></label>
+    </div>
+    <div class="chips" aria-live="polite">
+      <span class="chip chip-total"><b>${nfmt(todos.length)}</b> cliente${todos.length === 1 ? '' : 's'} registrado${todos.length === 1 ? '' : 's'}</span>
+      <span class="chip"><b>${nfmt(todos.length - faltan)}</b> con firma e ID</span>
+      <span class="chip"><b>${nfmt(faltan)}</b> sin firma o # ID</span>
+      ${lista.length !== todos.length ? `<span class="chip chip-filtro">Mostrando <b>${nfmt(lista.length)}</b> con los filtros</span>` : ''}
     </div>
     <div class="card">${pg.total ? `<div class="tabla-scroll"><table class="list">
       <tr><th>Paciente</th><th>Firma a nombre de</th><th>Ruta</th><th>Código</th><th>Firma · # ID</th><th></th></tr>

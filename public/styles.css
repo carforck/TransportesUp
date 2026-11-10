@@ -548,3 +548,31 @@ table.list td.acciones { flex: 1 1 100%; padding-top: 4px; }
 .pac-acc { flex-wrap: wrap; justify-content: flex-end; }
 .pac-firma { font-size: 12px; margin: 0 0 6px; }
 @media (prefers-reduced-motion: reduce) { .chev { transition: none; } }
+/* ---------- Panorama (dashboard) ---------- */
+.dash-head { align-items: flex-end; }
+.dash-head .dash-filtros { margin: 0; }
+button.kpi { font: inherit; text-align: left; width: 100%; cursor: pointer; min-width: 0; }
+.kpi .val small { font-size: 15px; font-weight: 600; color: var(--muted); }
+.kpi-link .kpi-go { position: absolute; top: 12px; right: 14px; }
+.kpis > * { min-width: 0; }
+.dash-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin-bottom: 16px; align-items: start; }
+.dash-grid > * { min-width: 0; margin-bottom: 0; }
+@media (min-width: 1000px) { .dash-grid { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); } .dash-grid.dos { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.viz { width: 100%; overflow: hidden; }
+.pend-lista { display: flex; flex-direction: column; gap: 6px; }
+.pend { display: grid; grid-template-columns: 44px minmax(0, 1fr) 16px; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; font-size: 14px;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); cursor: pointer; }
+.pend:hover:not(:disabled) { border-color: var(--morado); background: #FBF8FC; }
+.pend:disabled { cursor: default; opacity: .7; }
+.pend-n { font-weight: 800; font-size: 18px; text-align: center; border-radius: 8px; padding: 2px 0; }
+.pend.err .pend-n { background: #FDECEF; color: #A3123A; }
+.pend.warn .pend-n { background: #FFF2DA; color: var(--warn); }
+.pend.info .pend-n { background: #F3E6F7; color: var(--morado); }
+.pend.ok .pend-n { background: #E3F6EE; color: var(--ok); font-size: 15px; }
+.pend-t { min-width: 0; overflow-wrap: break-word; }
+.pend-go { color: var(--muted); font-weight: 700; }
+button.pb-row { font: inherit; background: none; border: 0; width: 100%; text-align: left; cursor: pointer; }
+button.pb-row:hover { background: var(--bg); }
+.pb-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip-total { background: #F3E6F7; border-color: #E2CDEB; }
+.chip-filtro { border-style: dashed; }
