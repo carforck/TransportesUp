@@ -8,3 +8,5 @@ recursos/
 .vscode/
 .env*
 !.env.example
+scripts/
+supabase/

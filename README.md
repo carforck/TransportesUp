@@ -204,6 +204,31 @@ El proyecto ya está estructurado para que el despliegue pase sin errores:
 
 La simulación local de Vercel (estáticos + reescrituras + función con `VERCEL=1`) se probó: API, anexos, modo demostración y sondeo funcionando.
 
+## Peso de los archivos (plan gratuito)
+
+Pensado para no pasarse de los límites gratuitos (Supabase: 1 GB de archivos y 500 MB de base de datos).
+
+| Qué | Cómo se guarda | Peso típico |
+|---|---|---|
+| Firma / # ID limpios | WebP con transparencia, máx. 600 px (PNG si el navegador no soporta WebP) | ~25 KB |
+| Anexo original | Máx. 1400 px, el más liviano entre WebP 70 y JPEG 72 | ~10–20 KB |
+| Bitácoras en PDF | **No se guardan**: se generan en el navegador al imprimir | 0 |
+
+- **Límites del servidor**: 512 KB por imagen limpia y 2 MB por original.
+- **Cuánto pesará antes de guardar**: el componente de anexos lo muestra.
+- **Espacio usado frente al límite**: está en **Campos fijos → Almacenamiento**.
+
+## Scripts de mantenimiento (`scripts/`, solo local)
+
+| Script | Para qué |
+|---|---|
+| `python3 scripts/optimizar_anexos.py [--prueba]` | Recomprime los anexos ya guardados en `data/`. Respalda antes en `data/_respaldos/`. Requiere Pillow. |
+| `node scripts/supabase.js estado` | Verifica la conexión con Supabase, la tabla y el bucket |
+| `node scripts/supabase.js esquema [--prueba]` | Ejecuta `supabase/migrations/*.sql` mediante la API de administración (`SUPABASE_ACCESS_TOKEN`) |
+| `node scripts/supabase.js subir-datos [--prueba] [--forzar]` | Copia `data/` (datos y anexos) a Supabase. Se niega a sobrescribir sin `--forzar`. |
+
+Los scripts leen sus variables de `.env.local` (ver `.env.example`).
+
 ## Privacidad y respaldo
 
 - La app maneja **datos de salud** (nombres, documentos, firmas). Por eso `data/`, los PDF originales y las imágenes fuente están en `.gitignore` y **nunca se suben al repositorio**.

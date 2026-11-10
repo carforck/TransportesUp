@@ -12,12 +12,27 @@
   });
   const lienzo = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
 
-  // Copia del anexo para guardar como soporte (JPEG, máx. 2000 px)
+  // ---- Peso liviano (plan gratuito): WebP con transparencia, tamaño acotado ----
+  const MAX_ANEXO = 600;     // px de ancho de la firma / # ID limpios (en el documento se ve a ~16 px de alto)
+  const MAX_ORIGINAL = 1400; // px del lado mayor del anexo original que se guarda como soporte
+  const bytesDe = dataUrl => Math.round((dataUrl.length - dataUrl.indexOf(',') - 1) * 3 / 4);
+  const kb = n => n < 1024 ? n + ' B' : (n / 1024).toFixed(n < 10240 ? 1 : 0) + ' KB';
+  // Exporta un lienzo con transparencia: WebP si el navegador lo soporta, si no PNG
+  function exportarTransparente(cv) {
+    const k = Math.min(1, MAX_ANEXO / cv.width);
+    const c = k < 1 ? lienzo(Math.round(cv.width * k), Math.max(1, Math.round(cv.height * k))) : cv;
+    if (k < 1) { const x = c.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(cv, 0, 0, c.width, c.height); }
+    const webp = c.toDataURL('image/webp', 0.82);
+    return webp.startsWith('data:image/webp') ? webp : c.toDataURL('image/png');
+  }
+
+  // Copia del anexo para guardar como soporte: máx. 1400 px, el más liviano entre WebP y JPEG
   function originalComoJpeg(img) {
-    const s = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight));
+    const s = Math.min(1, MAX_ORIGINAL / Math.max(img.naturalWidth, img.naturalHeight));
     const c = lienzo(Math.round(img.naturalWidth * s), Math.round(img.naturalHeight * s)), x = c.getContext('2d');
-    x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height);
-    return c.toDataURL('image/jpeg', 0.88);
+    x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.imageSmoothingQuality = 'high'; x.drawImage(img, 0, 0, c.width, c.height);
+    const jpg = c.toDataURL('image/jpeg', 0.72), webp = c.toDataURL('image/webp', 0.7);
+    return webp.startsWith('data:image/webp') && webp.length < jpg.length ? webp : jpg;
   }
 
   /* Quita el fondo:
@@ -152,10 +167,11 @@
     const full = lienzo(W, H); full.getContext('2d').putImageData(new ImageData(out, W, H), 0, 0);
     const pad = Math.round(Math.max(bwid, bhei) * 0.04) + 4;
     const cx = Math.max(0, x0 - pad), cy = Math.max(0, y0 - pad), cw = Math.min(W, x1 + pad + 1) - cx, ch = Math.min(H, y1 + pad + 1) - cy;
-    const k = Math.min(1, 900 / cw), fin = lienzo(Math.round(cw * k), Math.round(ch * k));
-    const fx = fin.getContext('2d'); fx.imageSmoothingQuality = 'high'; fx.drawImage(full, cx, cy, cw, ch, 0, 0, fin.width, fin.height);
+    const fin = lienzo(cw, ch);
+    fin.getContext('2d').drawImage(full, cx, cy, cw, ch, 0, 0, cw, ch);
     const aviso = ratio > 0.25 ? 'Se detectó bastante contenido; verifique que solo quede la firma.' : '';
-    return { data: fin.toDataURL('image/png'), ancho: fin.width, alto: fin.height, aviso };
+    const data = exportarTransparente(fin);
+    return { data, ancho: Math.min(cw, MAX_ANEXO), alto: Math.round(ch * Math.min(1, MAX_ANEXO / cw)), aviso, bytes: bytesDe(data) };
   }
 
   function recortarDibujo(cv) {
@@ -167,7 +183,7 @@
     if (x1 - x0 < 30) return null;
     const pad = 6, out = lienzo(x1 - x0 + pad * 2, y1 - y0 + pad * 2);
     out.getContext('2d').drawImage(cv, x0 - pad, y0 - pad, out.width, out.height, 0, 0, out.width, out.height);
-    return out.toDataURL('image/png');
+    return exportarTransparente(out);
   }
 
   const TEXTOS = {
@@ -231,8 +247,9 @@
         res.hidden = false; res.src = resultado.data;
         estado.className = 'estado ' + (resultado.aviso ? 'warn' : 'ok');
         const v = typeof verificar === 'function' ? verificar() : verificar;
-        estado.textContent = resultado.aviso ? '⚠ ' + resultado.aviso
-          : `✓ ${T.ok} ${v ? `Verifique que se lea ${v}.` : 'Revise el resultado y guarde.'}`;
+        const peso = ` · Se guardará: ${kb(resultado.bytes)} + original ${kb(bytesDe(original || ''))}`;
+        estado.textContent = (resultado.aviso ? '⚠ ' + resultado.aviso
+          : `✓ ${T.ok} ${v ? `Verifique que se lea ${v}.` : 'Revise el resultado y guarde.'}`) + peso;
       }
     };
     let timer; const procesarDiferido = () => { clearTimeout(timer); timer = setTimeout(procesar, 120); };

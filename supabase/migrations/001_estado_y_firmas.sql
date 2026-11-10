@@ -23,7 +23,8 @@ grant select, insert, update on public.app_estado to service_role;
 
 -- 2) Bucket privado para firmas e # ID (versión limpia + original)
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('firmas', 'firmas', false, 8388608, array['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
+values ('firmas', 'firmas', false, 2097152, -- 2 MB por archivo (plan gratuito)
+        array['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
 on conflict (id) do update
   set public = false,
       file_size_limit = excluded.file_size_limit,

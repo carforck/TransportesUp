@@ -930,12 +930,29 @@ async function marcar(id, estado) { await api('PUT', 'bitacoras/' + id, { estado
 /* ================= Configuración (campos fijos) ================= */
 function viewConfig() {
   const c = DB.config, f = (k, l) => `<label class="${k === 'titulo' || k === 'descripcion' ? 'full' : ''}">${l}<input name="${k}" value="${esc(c[k])}"></label>`;
+  // Espacio usado (plan gratuito de Supabase: base de datos 500 MB, archivos 1 GB)
+  const anexos = DB.clientes.flatMap(x => [x.firma, x.firmaId]).filter(Boolean);
+  const bytesArchivos = anexos.reduce((s, a) => s + (a.bytes || 0), 0), sinDato = anexos.filter(a => !a.bytes).length;
+  const { _info, ...datos } = DB; const bytesDatos = new Blob([JSON.stringify(datos)]).size;
+  const MB = 1024 * 1024, fmt = n => n < MB ? (n / 1024).toFixed(1) + ' KB' : (n / MB).toFixed(2) + ' MB';
+  const pct = (n, lim) => Math.max(0.5, Math.min(100, n / lim * 100));
+  const porCliente = DB.clientes.length ? bytesArchivos / DB.clientes.length : 0;
+  const cupo = porCliente ? Math.floor((1024 * MB) / porCliente) : 0;
   app.innerHTML = `
     <div class="head"><div><h1>Campos fijos</h1><p class="sub">Se repiten en todas las bitácoras. La ruta y horas de cada paciente están en su ficha de cliente.</p></div></div>
     <form class="card" id="fcfg"><div class="form">
       ${f('empresa', 'Empresa')}${f('nit', 'NIT')}${f('eps', 'EPS')}${f('codigo', 'Código tecnología')}
       ${f('titulo', 'Título del formato')}${f('descripcion', 'Descripción tecnología')}
-    </div><div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn primary">Guardar</button></div></form>`;
+    </div><div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn primary">Guardar</button></div></form>
+    <div class="card"><h2>Almacenamiento</h2>
+      <p class="muted" style="margin:0 0 12px">Las firmas y los # ID se comprimen al adjuntarlos (WebP, máx. 600 px; original máx. 1400 px). Los PDF de las bitácoras no se guardan: se generan al imprimir.</p>
+      <div class="esp"><div class="esp-top"><b>Firmas e # ID</b><span>${fmt(bytesArchivos)} de 1 GB</span></div>
+        <div class="meter"><span style="width:${pct(bytesArchivos, 1024 * MB)}%"></span></div>
+        <small class="muted">${anexos.length} anexo(s)${sinDato ? ` · ${sinDato} sin medir` : ''}${porCliente ? ` · ~${fmt(porCliente)} por cliente · alcanza para ~${cupo.toLocaleString('es-CO')} clientes` : ''}</small></div>
+      <div class="esp"><div class="esp-top"><b>Datos (clientes y bitácoras)</b><span>${fmt(bytesDatos)} de 500 MB</span></div>
+        <div class="meter"><span style="width:${pct(bytesDatos, 500 * MB)}%"></span></div></div>
+      <small class="muted">Almacenamiento actual: <b>${esc(_info?.almacenamiento || 'archivo')}</b>${_info?.persistente === false ? ' (temporal)' : ''} · límites del plan gratuito de Supabase.</small>
+    </div>`;
   $('#fcfg').onsubmit = async e => { e.preventDefault(); await api('PUT', 'config', Object.fromEntries(new FormData(e.target))); toast('Configuración guardada'); router(); };
 }
 

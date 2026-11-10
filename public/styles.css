@@ -400,3 +400,6 @@ a.pb-row[href]:hover { background: var(--bg); }
 .pb-val { font-size: 12px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
 .demo-banner { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: #FFF2DA; color: #7A4B00; border-bottom: 1px solid #F3D9A6; padding: 8px 16px; font-size: 13px; text-align: center; }
 @media (min-width: 900px) { .demo-banner { margin-left: var(--sb-mini); } .sb-fijo .demo-banner { margin-left: var(--sb-w); } }
+.esp { margin-bottom: 14px; }
+.esp-top { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; flex-wrap: wrap; }
+.esp-top span { color: var(--muted); font-variant-numeric: tabular-nums; }
