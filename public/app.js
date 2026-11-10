@@ -1042,13 +1042,8 @@ const ACCESO = {
           <div class="login-velo"></div>
           <div class="login-lema">
             <span class="ll-eti">Transporte especial · Cartagena</span>
-            <b>Bitácoras de servicio, sin papeleo</b>
-            <p>Registre los servicios de cada paciente, anexe su firma y su documento una sola vez, y genere la bitácora mensual lista para imprimir o enviar en PDF.</p>
-            <ul>
-              <li>Pacientes con ruta y horarios fijos</li>
-              <li>Firma e ID anexados automáticamente</li>
-              <li>Agenda de firmas y tablero mensual</li>
-            </ul>
+            <b>Bitácoras sin papeleo</b>
+            <p>Servicios, firmas y bitácora mensual en PDF, en un solo lugar.</p>
           </div>
         </div>
         <div class="login-col">
@@ -1139,8 +1134,8 @@ const ACCESO = {
   FOTOS: [ // fotos propias de Transportes UP Cartagena (perfil de la empresa en Google Maps)
     { archivo: 'flota-noche.webp', pos: '35% 60%' },
     { archivo: 'abordaje.webp', pos: '50% 40%' },
-    // Video de dron: Pexels (licencia libre, sin atribución obligatoria) · pexels.com/video/3940084
-    { archivo: 'cartagena-dron.webp', video: 'cartagena-dron.mp4', pos: '30% 50%' },
+    // Video de dron de la Torre del Reloj: Pexels (licencia libre, sin atribución obligatoria) · pexels.com/video/3940065
+    { archivo: 'torre-reloj.webp', video: 'torre-reloj.mp4', pos: '62% 50%' },
     { archivo: 'vans-murallas.webp', pos: '40% 70%' },
     { archivo: 'interior.webp', pos: '50% 50%' },
     { archivo: 'oficina.webp', pos: '12% 50%' },
