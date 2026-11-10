@@ -1083,7 +1083,6 @@ const ACCESO = {
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
               vanttagetech.com</a>
           </span>
-          <a class="login-credito" href="https://commons.wikimedia.org/wiki/Category:Quality_images_of_Cartagena,_Colombia" target="_blank" rel="noopener">Fotos de Cartagena: Bernard Gagnon · CC BY-SA 4.0</a>
         </footer>
         </div>
       </div>`);
@@ -1113,7 +1112,7 @@ const ACCESO = {
     // Carrusel de fondo: carga las demás fotos después de la primera y las alterna con fundido
     const capas = $$('.login-foto');
     setTimeout(() => capas.forEach(c => { if (!c.style.backgroundImage) c.style.backgroundImage = `url('${c.dataset.src}')`; }), 1200);
-    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (capas.length > 1 && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
       let i = 0;
       ACCESO.timer = setInterval(() => {
         if (document.hidden) return;
@@ -1121,12 +1120,9 @@ const ACCESO = {
       }, 7000);
     }
   },
-  FOTOS: [
-    { archivo: 'murallas.webp', lugar: 'Murallas y avenida Santander' },
-    { archivo: 'calle-30.webp', lugar: 'Getsemaní · Calle 30' },
-    { archivo: 'bocagrande.webp', lugar: 'Bocagrande' },
-    { archivo: 'san-pedro-claver.webp', lugar: 'Iglesia de San Pedro Claver' },
-  ],
+  // Fotos del panel de acceso (public/img/login/). Vacío = degradado de la marca.
+  // Usar SOLO fotos propias de Transportes UP o con licencia que no exija crédito visible.
+  FOTOS: [],
   async salir() {
     if (!confirm('¿Cerrar la sesión en este dispositivo?')) return;
     await fetch('/api/logout', { method: 'POST' }).catch(() => {});

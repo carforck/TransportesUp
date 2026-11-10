@@ -408,7 +408,7 @@ a.pb-row[href]:hover { background: var(--bg); }
 .sin-sesion .sidebar, .sin-sesion .topbar, .sin-sesion #app, .sin-sesion #demo, .sin-sesion #live { display: none !important; }
 /* Móvil: portada con fotos arriba y formulario limpio debajo. Escritorio: fotos a la izquierda, formulario a la derecha. */
 .login { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; background: var(--bg); overflow: auto; }
-.login-fotos { position: relative; flex: none; min-height: 260px; overflow: hidden; background: #2a1633; color: #fff; display: flex; align-items: flex-end; }
+.login-fotos { position: relative; flex: none; min-height: 260px; overflow: hidden; background: radial-gradient(circle at 85% 15%, rgba(255,255,255,.14), transparent 45%), linear-gradient(135deg, #5B1F78, #C2187A); color: #fff; display: flex; align-items: flex-end; }
 .login-foto { position: absolute; inset: 0; background: center / cover no-repeat; opacity: 0; transform: scale(1.04); transition: opacity 1.6s ease, transform 9s ease-out; }
 .login-foto.on { opacity: 1; transform: scale(1.12); }
 .login-velo { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(42, 12, 54, .25), rgba(42, 12, 54, .85)); }
