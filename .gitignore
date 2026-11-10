@@ -1,0 +1,20 @@
+# ── Datos reales: NUNCA al repositorio (datos de salud, cédulas y firmas de pacientes) ──
+data/
+docs_originales/
+logos_originales/
+
+# ── Archivos de prueba / temporales ──
+public/_*.html
+public/_t/
+
+# ── Sistema / editores / logs ──
+node_modules/
+*.log
+.DS_Store
+.vscode/
+.idea/
+.env*
+
+# PDFs reales generados o descargados (soportes, bitácoras firmadas)
+recursos/
+*.pdf

@@ -1,0 +1,11 @@
+{
+  "name": "transportes-up-bitacoras",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Digitalización de bitácoras de transporte especial (Salud Total EPS) con clientes y firmas",
+  "scripts": {
+    "dev": "node --watch server.js",
+    "start": "node server.js"
+  },
+  "engines": { "node": ">=20" }
+}
