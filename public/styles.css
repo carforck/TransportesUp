@@ -532,3 +532,19 @@ table.list td.acciones { flex: 1 1 100%; padding-top: 4px; }
 .ib.peligro:hover { background: #FDECEF; color: var(--danger); }
 .ib:focus-visible { outline: 2px solid var(--morado); outline-offset: -2px; }
 @media (hover: none) { .ib { width: 42px; height: 42px; } }
+/* Registros: pacientes plegables */
+.chips .chips-acc { margin-left: auto; display: inline-flex; gap: 6px; }
+.card.pac { padding-top: 12px; padding-bottom: 12px; }
+.card.pac .pac-head { margin-bottom: 0; }
+.card.pac.abierto .pac-head { margin-bottom: 8px; }
+.pac-toggle { display: flex; align-items: center; gap: 10px; flex: 1 1 280px; min-width: 0; text-align: left; background: none; border: 0; padding: 4px; margin: -4px; border-radius: 10px; cursor: pointer; color: inherit; font: inherit; }
+.pac-toggle:hover { background: rgba(110, 42, 142, .05); }
+.pac-toggle:focus-visible { outline: 2px solid var(--morado); outline-offset: 2px; }
+.pac-toggle h2 { font-size: 16px; }
+.pac-tit { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.chev { flex: none; width: 26px; height: 26px; border-radius: 8px; background: #F4EEF7; position: relative; transition: transform .2s ease; }
+.chev::before { content: ""; position: absolute; left: 9px; top: 8px; width: 7px; height: 7px; border-right: 2px solid var(--morado); border-bottom: 2px solid var(--morado); transform: rotate(-45deg); }
+.card.pac.abierto .chev { transform: rotate(90deg); }
+.pac-acc { flex-wrap: wrap; justify-content: flex-end; }
+.pac-firma { font-size: 12px; margin: 0 0 6px; }
+@media (prefers-reduced-motion: reduce) { .chev { transition: none; } }

@@ -561,6 +561,7 @@ function resumenMes(mes = mesPorDefecto()) {
       <td style="text-align:right"><a class="btn sm" href="#/registros?m=${mes}&c=${c.id}">Ver registros</a></td></tr>`; }).join('')}</table></div>`;
 }
 
+const REG_ABIERTOS = {}; // pacientes desplegados en Registros: { id: true|false }
 function viewRegistros(qs = '') {
   const p = new URLSearchParams(qs);
   const meses = mesesConDatos();
@@ -616,20 +617,41 @@ function viewRegistros(qs = '') {
       <span class="chip"><b>${servicios}</b> servicios</span>
       <span class="chip"><b>${servicios * 2}</b> filas (ida y regreso)</span>
       <span class="chip"><b>${conFirma}</b> con firma e ID anexados</span>
+      ${pgReg.total > 1 ? `<span class="chips-acc"><button class="btn sm" id="expTodos">▾ Expandir todos</button><button class="btn sm" id="conTodos">▸ Contraer todos</button></span>` : ''}
     </div>
-    ${pgReg.total ? pgReg.items.map(([id, lista]) => { const c = cliente(id); const n = lista.reduce((s, b) => s + b.fechas.length, 0); return `
-      <div class="card">
+    ${pgReg.total ? pgReg.items.map(([id, lista]) => { const c = cliente(id); const n = lista.reduce((s, b) => s + b.fechas.length, 0);
+      const abierto = REG_ABIERTOS[id] ?? (!!cid || pgReg.total === 1); // un solo paciente: abierto de entrada
+      const fs = lista.flatMap(b => fechasDe(b)).sort(), rango = fs.length > 1 ? `${fechaDoc(fs[0])} – ${fechaDoc(fs[fs.length - 1])}` : fs.length ? fechaDoc(fs[0]) : '';
+      const cods = [...new Set(lista.map(b => codigoDe(b, c)))].join(', ');
+      return `
+      <div class="card pac ${abierto ? 'abierto' : ''}" data-pac="${id}">
         <div class="pac-head">
-          <div><h2>${esc(c.paciente)}</h2><small class="muted">CC ${esc(c.docPaciente)} · firma: ${esc(nombreFirmante(c) || '—')} ${docFirmante(c) ? '(CC ' + esc(docFirmante(c)) + ')' : ''} · ${n} servicios</small></div>
-          <div class="row">${miniAnexos(c)}${anexosCompletos(c) ? '' : ` <button class="btn sm primary" onclick="capturarFirma('${c.id}')">📎 Adjuntar ${faltantes(c).join(' y ')}</button>`}
+          <button type="button" class="pac-toggle" aria-expanded="${abierto}" aria-controls="reg-${id}">
+            <span class="chev" aria-hidden="true"></span>
+            <span class="pac-tit"><h2>${esc(c.paciente)}</h2><small class="muted">CC ${esc(c.docPaciente)} · ${n} servicio${n === 1 ? '' : 's'}${rango ? ' · ' + rango : ''}${cods ? ' · ' + esc(cods) : ''}</small></span>
+          </button>
+          <div class="row pac-acc">${miniAnexos(c)}${anexosCompletos(c) ? '' : ` <button class="btn sm acc-main" onclick="capturarFirma('${c.id}')">${ico('clip')} Adjuntar ${faltantes(c).join(' y ')}</button>`}
             <button class="btn sm" onclick="agregarFecha('${c.id}', '${mes === 'todos' ? '' : mes}')">+ Fecha</button>
             ${mes !== 'todos' && lista[0] ? `<a class="btn sm" href="#/bitacora/${lista[0].id}">Abrir / imprimir</a>` : ''}</div>
         </div>
-        <table class="list reg"><tr><th>Fecha</th><th>Ida</th><th>Regreso</th><th>Firma</th><th># ID</th><th></th></tr>${filasPac(c, lista)}</table>
+        <div class="pac-cuerpo" id="reg-${id}" ${abierto ? '' : 'hidden'}>
+          <p class="muted pac-firma">Firma: ${esc(nombreFirmante(c) || '—')} ${docFirmante(c) ? '(CC ' + esc(docFirmante(c)) + ')' : ''}</p>
+          <table class="list reg"><tr><th>Fecha</th><th>Ida</th><th>Regreso</th><th>Firma</th><th># ID</th><th></th></tr>${abierto ? filasPac(c, lista) : ''}</table>
+        </div>
       </div>`; }).join('')
       + paginadorHtml(pgReg, 'pacientes')
       : `<div class="card empty">No hay registros ${mes === 'todos' ? '' : 'en ' + periodoTxt(mes)}${cid ? ' para este paciente' : ''}.</div>`}`;
   enlazarPaginador(app, n => ir({ p: n }));
+  // Plegar / desplegar pacientes: la tabla se arma solo al abrir y el estado se recuerda al refrescar en vivo
+  const abrir = (card, si) => {
+    const id = card.dataset.pac, cuerpo = $('.pac-cuerpo', card), tabla = $('table.reg', cuerpo);
+    if (si && tabla.rows.length <= 1) tabla.insertAdjacentHTML('beforeend', filasPac(cliente(id), porPac[id]));
+    card.classList.toggle('abierto', si); cuerpo.hidden = !si; $('.pac-toggle', card).setAttribute('aria-expanded', si);
+    REG_ABIERTOS[id] = si;
+  };
+  $$('.pac').forEach(card => $('.pac-toggle', card).onclick = () => abrir(card, !card.classList.contains('abierto')));
+  $('#expTodos')?.addEventListener('click', () => $$('.pac').forEach(card => abrir(card, true)));
+  $('#conTodos')?.addEventListener('click', () => $$('.pac').forEach(card => abrir(card, false)));
 
   $('#fm').onchange = e => ir({ m: e.target.value });
   $('#fc').onchange = e => ir({ c: e.target.value });
