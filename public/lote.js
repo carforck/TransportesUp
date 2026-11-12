@@ -11,6 +11,7 @@ const CODIGOS_BASE = [
   { codigo: 'T340017600', descripcion: 'TRANSPORTE NO ASISTENCIAL TERRESTRE DE MUNICIPIOS ALEDAÑOS DE 60KM A 100KM REDONDO - (POS)' },
   { codigo: 'T340019714', descripcion: 'TRANSPORTE MUNICIPIOS ALEDAÑOS DE 30KM A 60 KM REDONDO VAN GRANDE / CON RAMPA (POS)' },
   { codigo: 'P100626000', descripcion: 'TRANSPORTE TERRESTRE MUNICIPIOS ALEDAÑOS DE 30KM A 60 KM REDONDO (NO POS)' },
+  { codigo: 'T340019712', descripcion: 'TRANSPORTE MUNICIPIOS ALEDAÑOS MENOS DE 30 KM REDONDO VAN GRANDE / CON RAMPA (POS)' }, // visto en radicados de septiembre
 ];
 // IPS: el mismo lugar aparece escrito de muchas formas; "claves" son palabras que deben aparecer TODAS (sin tildes).
 // El orden importa: primero las más específicas.
