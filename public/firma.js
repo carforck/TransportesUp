@@ -3,7 +3,6 @@
    Uso: const w = FirmaWidget(el, { actual }); const r = w.valor();
         r = null (sin cambios) | { error } | { tipo, data (PNG transparente), original (anexo) } */
 (function () {
-  const TIPOS = ['image/png', 'image/jpeg', 'image/webp'];
   const MAX_SUBIDA = 15 * 1024 * 1024;
   const TINTAS = { original: null, azul: [13, 42, 138], negro: [20, 20, 20] };
 
@@ -53,6 +52,19 @@
     const bw = Math.max(8, Math.round(W / 24)), bh = Math.max(8, Math.round(H / 24));
     const small = lienzo(bw, bh), smx = small.getContext('2d');
     smx.filter = 'blur(2px)'; smx.drawImage(src, 0, 0, bw, bh);
+    // Safari < 18 no soporta ctx.filter: se desenfoca a mano (caja 3×3, dos pasadas) sobre la miniatura
+    if (smx.filter !== 'blur(2px)') {
+      const d = smx.getImageData(0, 0, bw, bh), a = d.data;
+      for (let pasada = 0; pasada < 2; pasada++) {
+        const c = new Uint8ClampedArray(a);
+        for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) for (let k = 0; k < 3; k++) {
+          let s = 0, n = 0;
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy; if (xx >= 0 && yy >= 0 && xx < bw && yy < bh) { s += c[(yy * bw + xx) * 4 + k]; n++; } }
+          a[(y * bw + x) * 4 + k] = s / n;
+        }
+      }
+      smx.putImageData(d, 0, 0);
+    }
     const bg = lienzo(W, H), bgx = bg.getContext('2d', { willReadFrequently: true });
     bgx.imageSmoothingQuality = 'high'; bgx.drawImage(small, 0, 0, W, H);
     const bp = bgx.getImageData(0, 0, W, H).data;
@@ -201,10 +213,18 @@
         <button type="button" class="btn" data-t="diligenciada">${T.dibujar}</button>
       </div>
       <div data-p="escaneada">
-        <label class="drop" data-drop>
-          <span data-drop-txt>📄 ${T.drop}<br><small class="muted">PNG, JPG o WEBP · fondo claro</small></span>
-          <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden>
-        </label>
+        <div class="drop" data-drop>
+          <span data-drop-txt>📄 ${T.drop}<br><small class="muted">Foto o escaneo (JPG, PNG, WEBP o foto del iPhone) · fondo claro</small></span>
+          <div class="drop-btns">
+            <!-- Los input van dentro de un label y ocultos "visualmente" (no con display:none): así abren en Safari/iPhone -->
+            <label class="btn primary">📷 Tomar foto<input type="file" accept="image/*" capture="environment" class="file-oculto" data-cam></label>
+            <label class="btn">🖼️ Elegir archivo<input type="file" accept="image/*" class="file-oculto" data-file></label>
+          </div>
+        </div>
+        <div class="cam" data-camara hidden>
+          <video playsinline muted autoplay data-video></video>
+          <div class="row" style="justify-content:center;margin-top:8px"><button type="button" class="btn" data-cam-cerrar>Cancelar</button><button type="button" class="btn primary" data-cam-foto>📸 Capturar</button></div>
+        </div>
         <div data-ajustes hidden>
           <div class="cmp">
             <figure><figcaption>Anexo original — <span class="muted">arrastre para recortar solo el contenido</span></figcaption>
@@ -236,7 +256,7 @@
     });
 
     // ----- Adjuntar -----
-    const drop = q('[data-drop]'), inp = q('input[type=file]'), sens = q('[data-sens]'), tintaSel = q('[data-tinta]'), estado = q('[data-estado]');
+    const drop = q('[data-drop]'), inp = q('[data-file]'), inpCam = q('[data-cam]'), sens = q('[data-sens]'), tintaSel = q('[data-tinta]'), estado = q('[data-estado]');
     const procesar = () => {
       if (!img) return;
       q('[data-sv]').textContent = sens.value + '%';
@@ -257,17 +277,52 @@
       if (!file) return;
       q('[data-ajustes]').hidden = false;
       estado.className = 'estado'; estado.textContent = 'Procesando…'; resultado = null;
-      if (!TIPOS.includes(file.type)) { estado.className = 'estado err'; estado.textContent = '✗ Formato no soportado. Use una foto PNG, JPG o WEBP.'; return; }
+      // Se acepta cualquier imagen que el navegador pueda abrir (Safari entrega a veces HEIC o un tipo vacío);
+      // lo que no se pueda decodificar se rechaza al intentar abrirlo. SVG no (puede traer código).
+      if (file.type === 'image/svg+xml' || (file.type && !file.type.startsWith('image/'))) { estado.className = 'estado err'; estado.textContent = '✗ Ese archivo no es una foto. Use una foto o escaneo (JPG, PNG, WEBP).'; return; }
       if (file.size > MAX_SUBIDA) { estado.className = 'estado err'; estado.textContent = '✗ El archivo es muy grande (máx. 15 MB).'; return; }
       try {
-        img = await cargarImagen(file); recorte = null; pintarCaja();
+        img = await cargarImagen(file).catch(() => { throw new Error(/hei[cf]/i.test(file.type + file.name)
+          ? 'Este navegador no abre fotos HEIC. En el iPhone: Ajustes › Cámara › Formatos › "Más compatible", o use "Tomar foto".'
+          : 'No se pudo abrir la imagen. Pruebe con otra foto (JPG o PNG).'); });
+        recorte = null; pintarCaja();
         q('[data-orig]').src = img.src;
         original = originalComoJpeg(img);
         q('[data-drop-txt]').innerHTML = `📄 <b>${file.name.replace(/[<>&]/g, '')}</b> — clic para cambiar`;
         setTimeout(procesar, 20);
       } catch (e) { estado.className = 'estado err'; estado.textContent = '✗ ' + e.message; }
     }
-    inp.onchange = () => tomar(inp.files[0]);
+    // value = '' permite volver a escoger el mismo archivo / repetir la foto
+    inp.onchange = () => { tomar(inp.files[0]); inp.value = ''; };
+    inpCam.onchange = () => { tomar(inpCam.files[0]); inpCam.value = ''; };
+    // Tocar la zona (fuera de los botones) abre el selector de archivo
+    drop.onclick = e => { if (!e.target.closest('label, button, input')) inp.click(); };
+
+    // ----- Cámara -----
+    // Celular/tablet: el input con capture abre la cámara nativa (mejor foto, enfoque y flash).
+    // Computador (Safari/Chrome en Mac o PC): "capture" se ignora, así que se abre la webcam en la misma ventana.
+    const camBox = q('[data-camara]'), video = q('[data-video]');
+    let flujo = null;
+    const cerrarCam = () => { flujo?.getTracks().forEach(t => t.stop()); flujo = null; camBox.hidden = true; drop.hidden = false; };
+    const tactil = matchMedia('(pointer: coarse)').matches;
+    if (!tactil && navigator.mediaDevices?.getUserMedia) {
+      inpCam.closest('label').addEventListener('click', async e => {
+        e.preventDefault();
+        try {
+          flujo = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+          video.srcObject = flujo; drop.hidden = true; camBox.hidden = false; await video.play().catch(() => {});
+        } catch (err) {
+          estado.className = 'estado err'; q('[data-ajustes]').hidden = false;
+          estado.textContent = err.name === 'NotAllowedError' ? '✗ Permiso de cámara denegado. Actívelo en el navegador o use "Elegir archivo".' : '✗ No se encontró una cámara. Use "Elegir archivo".';
+        }
+      });
+    }
+    q('[data-cam-cerrar]').onclick = cerrarCam;
+    q('[data-cam-foto]').onclick = () => {
+      if (!video.videoWidth) return;
+      const c = lienzo(video.videoWidth, video.videoHeight); c.getContext('2d').drawImage(video, 0, 0);
+      c.toBlob(b => { cerrarCam(); if (b) tomar(new File([b], 'foto-camara.jpg', { type: 'image/jpeg' })); }, 'image/jpeg', 0.92);
+    };
 
     // ----- Recorte: arrastrar un recuadro sobre el original -----
     const wrap = q('[data-cropwrap]'), box = q('[data-cropbox]'), orig = q('[data-orig]'), sinCrop = q('[data-sincrop]');
