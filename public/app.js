@@ -300,7 +300,8 @@ function viewDashboard(param = '') {
         ${porCodigo.length ? `<div class="pb">${barrasLista(porCodigo)}</div>` : '<div class="empty">Sin servicios en el mes</div>'}</section>
       <section class="card"><div class="pac-head"><div><h2>Por IPS</h2><small class="muted">Servicios del mes</small></div></div>
         ${porIps.length ? `<div class="pb">${barrasLista(porIps)}</div>` : '<div class="empty">Sin servicios en el mes</div>'}</section>
-    </div>`;
+    </div>
+    ${tarjetaEspacio()}`;
 
   const pintar = () => graficoMeses($('#gMeses'), meses, mes, m => ir({ m }));
   pintar();
@@ -1173,16 +1174,35 @@ const filaCodigo = k => `<tr><td><input name="codigo" value="${esc(k.codigo)}" p
   <td>${usoCodigo(k.codigo)}</td><td><button type="button" class="btn sm danger" data-quitar aria-label="Quitar">✕</button></td></tr>`;
 const filaIps = i => `<tr><td><input name="nombre" value="${esc(i.nombre)}" required></td><td><input name="claves" value="${esc((i.claves || []).join(', '))}" placeholder="CISADDE, POPA" required></td>
   <td>${DB.clientes.filter(c => ipsCanon(c.ips) === i.nombre).length}</td><td><button type="button" class="btn sm danger" data-quitar aria-label="Quitar">✕</button></td></tr>`;
-function viewConfig() {
-  const c = DB.config, f = (k, l) => `<label class="${k === 'titulo' || k === 'descripcion' ? 'full' : ''}">${l}<input name="${k}" value="${esc(c[k])}"></label>`;
-  // Espacio usado (plan gratuito de Supabase: base de datos 500 MB, archivos 1 GB)
+// Espacio usado (plan gratuito de Supabase: base de datos 500 MB, archivos 1 GB)
+const fmtBytes = n => n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(2) + ' MB';
+const pctBarra = (n, lim) => Math.max(0.5, Math.min(100, n / lim * 100));
+function usoEspacio() {
+  const MB = 1024 * 1024, LIM_ARCH = 1024 * MB, LIM_DATOS = 500 * MB;
   const anexos = DB.clientes.flatMap(x => [x.firma, x.firmaId]).filter(Boolean);
   const bytesArchivos = anexos.reduce((s, a) => s + (a.bytes || 0), 0), sinDato = anexos.filter(a => !a.bytes).length;
   const { _info, ...datos } = DB; const bytesDatos = new Blob([JSON.stringify(datos)]).size;
-  const MB = 1024 * 1024, fmt = n => n < MB ? (n / 1024).toFixed(1) + ' KB' : (n / MB).toFixed(2) + ' MB';
-  const pct = (n, lim) => Math.max(0.5, Math.min(100, n / lim * 100));
   const porCliente = DB.clientes.length ? bytesArchivos / DB.clientes.length : 0;
-  const cupo = porCliente ? Math.floor((1024 * MB) / porCliente) : 0;
+  const cupo = porCliente ? Math.floor(LIM_ARCH / porCliente) : 0;
+  const peor = Math.max(bytesArchivos / LIM_ARCH, bytesDatos / LIM_DATOS);
+  return { anexos, bytesArchivos, sinDato, bytesDatos, MB, LIM_ARCH, LIM_DATOS, porCliente, cupo, peor, _info };
+}
+// Tarjeta del Panorama: cuánto se lleva del plan gratuito
+function tarjetaEspacio() {
+  const u = usoEspacio(), tono = u.peor >= 0.9 ? 'mal' : u.peor >= 0.7 ? 'alerta' : '';
+  const barra = (lbl, n, lim, limTxt) => `<div class="esp"><div class="esp-top"><b>${lbl}</b><span>${fmtBytes(n)} de ${limTxt} · ${(n / lim * 100).toFixed(n / lim < 0.01 ? 2 : 1)} %</span></div>
+    <div class="meter ${tono}"><span style="width:${pctBarra(n, lim)}%"></span></div></div>`;
+  return `<section class="card espacio"><div class="pac-head"><div><h2>Almacenamiento</h2><small class="muted">Plan gratuito de Supabase</small></div>
+      <a class="btn sm" href="#/config">Ver detalle →</a></div>
+    ${barra('Firmas e # ID', u.bytesArchivos, u.LIM_ARCH, '1 GB')}
+    ${barra('Datos (clientes y bitácoras)', u.bytesDatos, u.LIM_DATOS, '500 MB')}
+    <small class="muted">${u.anexos.length} anexo(s)${u.porCliente ? ` · ~${fmtBytes(u.porCliente)} por cliente · alcanza para ~${u.cupo.toLocaleString('es-CO')} clientes` : ''}${tono ? ' · <b>conviene pasar a un plan pago o depurar</b>' : ''}</small>
+  </section>`;
+}
+function viewConfig() {
+  const c = DB.config, f = (k, l) => `<label class="${k === 'titulo' || k === 'descripcion' ? 'full' : ''}">${l}<input name="${k}" value="${esc(c[k])}"></label>`;
+  const { anexos, bytesArchivos, sinDato, bytesDatos, MB, porCliente, cupo, _info } = usoEspacio();
+  const fmt = fmtBytes, pct = pctBarra;
   app.innerHTML = `
     <div class="head"><div><h1>Campos fijos</h1><p class="sub">Se repiten en todas las bitácoras. La ruta y horas de cada paciente están en su ficha de cliente.</p></div></div>
     <form class="card" id="fcfg"><div class="form">

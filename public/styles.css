@@ -645,3 +645,9 @@ button.pb-row:hover { background: var(--bg); }
 .cam { border: 2px solid var(--line); border-radius: var(--radius); padding: 10px; background: #000; }
 .cam video { width: 100%; max-height: 60vh; border-radius: 8px; display: block; background: #000; }
 .cam .btn { background: #fff; }
+
+/* ===== Panorama: almacenamiento del plan gratuito ===== */
+.card.espacio { margin-top: 16px; }
+.card.espacio .esp { margin-bottom: 10px; }
+.meter.alerta span { background: #E8A400; }
+.meter.mal span { background: var(--danger); }
