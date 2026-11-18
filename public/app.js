@@ -1001,6 +1001,7 @@ function viewBitacora(param = '') {
     if (b.modoFirma === 'digital' && !anexosCompletos(c) && !confirm(`Falta anexar ${faltantes(c).join(' y ')} del cliente: ${!c.firma ? 'la columna FIRMA saldrá en blanco' : 'en # ID saldrá el número digitado en vez del escrito a mano'}. ¿Imprimir igual?`)) return;
     if (editando) $('#editar').click(); // imprimir sin controles de edición
     document.title = nombreArchivo(b);
+    await afinarAnexos($('#docWrap'));
     window.print();
   };
   if (!nueva) $('#del').onclick = async () => { if (!confirm('¿Eliminar esta bitácora?')) return; await api('DELETE', 'bitacoras/' + b.id); location.hash = '#/bitacoras'; };
@@ -1030,10 +1031,49 @@ function azar(semilla) {
   let h = 2166136261; for (const ch of semilla) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
   return () => { h = (h + 0x6D2B79F5) | 0; let t = Math.imul(h ^ (h >>> 15), 1 | h); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
+// Las firmas e # ID guardados traen margen transparente alrededor de la tinta. Al mostrarlos en la bitácora
+// se recorta ese margen (en el navegador, sin tocar el archivo) para que la tinta llene su espacio.
+const ANEXO_LISTO = new Map(), ANEXO_PEND = new Map();
+function recortarAnexo(src) {
+  if (ANEXO_LISTO.has(src)) return Promise.resolve(ANEXO_LISTO.get(src));
+  if (!ANEXO_PEND.has(src)) ANEXO_PEND.set(src, new Promise(fin => {
+    const img = new Image();
+    img.onload = () => {
+      let out = src;
+      try {
+        const W = img.naturalWidth, H = img.naturalHeight, cv = document.createElement('canvas');
+        cv.width = W; cv.height = H;
+        const cx = cv.getContext('2d'); cx.drawImage(img, 0, 0);
+        const a = cx.getImageData(0, 0, W, H).data;
+        let x0 = W, y0 = H, x1 = -1, y1 = -1;
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (a[(y * W + x) * 4 + 3] > 40) {
+          if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+        }
+        if (x1 >= 0 && ((x1 - x0 + 1) * (y1 - y0 + 1)) < W * H * 0.97) {
+          const p = 2; x0 = Math.max(0, x0 - p); y0 = Math.max(0, y0 - p); x1 = Math.min(W - 1, x1 + p); y1 = Math.min(H - 1, y1 + p);
+          const o = document.createElement('canvas'); o.width = x1 - x0 + 1; o.height = y1 - y0 + 1;
+          o.getContext('2d').drawImage(cv, x0, y0, o.width, o.height, 0, 0, o.width, o.height);
+          out = o.toDataURL('image/png');
+        }
+      } catch {} // si el navegador no deja leer la imagen, se usa tal cual
+      ANEXO_LISTO.set(src, out); ANEXO_PEND.delete(src); fin(out);
+    };
+    img.onerror = () => { ANEXO_LISTO.set(src, src); ANEXO_PEND.delete(src); fin(src); };
+    img.src = src;
+  }));
+  return ANEXO_PEND.get(src);
+}
+// Cambia en "el" las firmas/# ID por su versión recortada; esperar antes de imprimir o exportar
+function afinarAnexos(el) {
+  return Promise.all($$('img[data-anexo]', el).map(async img => {
+    const src = await recortarAnexo(img.dataset.anexo);
+    if (img.getAttribute('src') !== src) await new Promise(r => { img.onload = img.onerror = r; img.src = src; });
+  }));
+}
 function anexoVariado(src, semilla, alt, { rot = 2, dy = 1, sc = [0.9, 1.04], pos = [0.04, 0.96] } = {}) {
   const r = azar(semilla), lerp = (a, b2) => a + (b2 - a) * r();
   const p = lerp(...pos), giro = lerp(-rot, rot), mov = lerp(-dy, dy), esc_ = lerp(...sc);
-  return `<div class="var"><span style="flex:${p.toFixed(3)}"></span><img src="${src}" alt="${alt}" style="transform:translateY(${mov.toFixed(2)}px) rotate(${giro.toFixed(2)}deg) scale(${esc_.toFixed(3)})"><span style="flex:${(1 - p).toFixed(3)}"></span></div>`;
+  return `<div class="var"><span style="flex:${p.toFixed(3)}"></span><img src="${ANEXO_LISTO.get(src) || src}" data-anexo="${src}" alt="${alt}" style="transform:translateY(${mov.toFixed(2)}px) rotate(${giro.toFixed(2)}deg) scale(${esc_.toFixed(3)})"><span style="flex:${(1 - p).toFixed(3)}"></span></div>`;
 }
 
 // Pinta la bitácora en "el" y ajusta las filas por hoja para que cada hoja quepa en una página carta horizontal
@@ -1049,6 +1089,7 @@ function pintarDocAjustado(el, b, editable = false, edicion = false) {
     n = Math.max(6, Math.min(n - 1, Math.floor(n * LIM / peor)));
     el.innerHTML = renderDoc(b, editable, edicion, n);
   }
+  afinarAnexos(el);
   return n;
 }
 

@@ -466,6 +466,7 @@ async function pdfBitacora(b) {
   document.body.appendChild(caja);
   pintarDocAjustado(caja, b, false, false);
   try {
+    await afinarAnexos(caja);
     await Promise.all($$('img', caja).map(img => img.complete ? null : new Promise(r => { img.onload = img.onerror = r; })));
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'in', format: 'letter', compress: true });

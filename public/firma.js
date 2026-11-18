@@ -177,7 +177,7 @@
 
     // Recorte con margen y tamaño final razonable
     const full = lienzo(W, H); full.getContext('2d').putImageData(new ImageData(out, W, H), 0, 0);
-    const pad = Math.round(Math.max(bwid, bhei) * 0.04) + 4;
+    const pad = Math.round(Math.min(bwid, bhei) * 0.03) + 2; // margen mínimo: la tinta debe llenar su espacio en la bitácora
     const cx = Math.max(0, x0 - pad), cy = Math.max(0, y0 - pad), cw = Math.min(W, x1 + pad + 1) - cx, ch = Math.min(H, y1 + pad + 1) - cy;
     const fin = lienzo(cw, ch);
     fin.getContext('2d').drawImage(full, cx, cy, cw, ch, 0, 0, cw, ch);

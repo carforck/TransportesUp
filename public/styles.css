@@ -314,10 +314,10 @@ input[type=range] { padding: 0; min-height: 32px; accent-color: var(--magenta); 
 
 /* ===== Firma e ID con variación natural, siempre dentro de la celda ===== */
 .doc td.c-firma, .doc td.c-acu { overflow: hidden; padding: 0 3px; }
-.doc .var { display: flex; align-items: center; height: 22px; width: 100%; overflow: hidden; }
+.doc .var { display: flex; align-items: center; height: 24px; width: 100%; overflow: hidden; }
 .doc .var span { flex-shrink: 1; min-width: 0; }
-.doc .var img { flex: none; height: 16px; max-width: 74%; object-fit: contain; transform-origin: center; }
-.doc td.c-acu .var img { height: 15px; max-width: 84%; }
+.doc .var img { flex: none; height: 21px; max-width: 84%; object-fit: contain; transform-origin: center; }
+.doc td.c-acu .var img { height: 17px; max-width: 84%; }
 
 @media print {
   .doc td.mod { background: none !important; }
