@@ -1033,7 +1033,7 @@ function azar(semilla) {
 }
 // Las firmas e # ID guardados traen margen transparente alrededor de la tinta. Al mostrarlos en la bitácora
 // se recorta ese margen (en el navegador, sin tocar el archivo) para que la tinta llene su espacio.
-const ANEXO_LISTO = new Map(), ANEXO_PEND = new Map();
+const ANEXO_LISTO = new Map(), ANEXO_PEND = new Map(), ANEXO_ANCHO = new Set(); // ANEXO_ANCHO: src con proporción > 6:1
 function recortarAnexo(src) {
   if (ANEXO_LISTO.has(src)) return Promise.resolve(ANEXO_LISTO.get(src));
   if (!ANEXO_PEND.has(src)) ANEXO_PEND.set(src, new Promise(fin => {
@@ -1054,7 +1054,8 @@ function recortarAnexo(src) {
           const o = document.createElement('canvas'); o.width = x1 - x0 + 1; o.height = y1 - y0 + 1;
           o.getContext('2d').drawImage(cv, x0, y0, o.width, o.height, 0, 0, o.width, o.height);
           out = o.toDataURL('image/png');
-        }
+          if (o.width / o.height > 6) ANEXO_ANCHO.add(src);
+        } else if (W / H > 6) ANEXO_ANCHO.add(src);
       } catch {} // si el navegador no deja leer la imagen, se usa tal cual
       ANEXO_LISTO.set(src, out); ANEXO_PEND.delete(src); fin(out);
     };
@@ -1067,13 +1068,14 @@ function recortarAnexo(src) {
 function afinarAnexos(el) {
   return Promise.all($$('img[data-anexo]', el).map(async img => {
     const src = await recortarAnexo(img.dataset.anexo);
+    img.classList.toggle('ancha', ANEXO_ANCHO.has(img.dataset.anexo));
     if (img.getAttribute('src') !== src) await new Promise(r => { img.onload = img.onerror = r; img.src = src; });
   }));
 }
-function anexoVariado(src, semilla, alt, { rot = 2, dy = 1, sc = [0.9, 1.04], pos = [0.04, 0.96] } = {}) {
+function anexoVariado(src, semilla, alt, { rot = 2, dy = 1, sc = [0.9, 1], pos = [0.04, 0.96] } = {}) {
   const r = azar(semilla), lerp = (a, b2) => a + (b2 - a) * r();
   const p = lerp(...pos), giro = lerp(-rot, rot), mov = lerp(-dy, dy), esc_ = lerp(...sc);
-  return `<div class="var"><span style="flex:${p.toFixed(3)}"></span><img src="${ANEXO_LISTO.get(src) || src}" data-anexo="${src}" alt="${alt}" style="transform:translateY(${mov.toFixed(2)}px) rotate(${giro.toFixed(2)}deg) scale(${esc_.toFixed(3)})"><span style="flex:${(1 - p).toFixed(3)}"></span></div>`;
+  return `<div class="var"><span style="flex:${p.toFixed(3)}"></span><img src="${ANEXO_LISTO.get(src) || src}" data-anexo="${src}" class="${ANEXO_ANCHO.has(src) ? 'ancha' : ''}" alt="${alt}" style="transform:translateY(${mov.toFixed(2)}px) rotate(${giro.toFixed(2)}deg) scale(${esc_.toFixed(3)})"><span style="flex:${(1 - p).toFixed(3)}"></span></div>`;
 }
 
 // Pinta la bitácora en "el" y ajusta las filas por hoja para que cada hoja quepa en una página carta horizontal
@@ -1098,7 +1100,7 @@ function renderDoc(b, editable = false, edicion = false, POR_HOJA = 23) {
   const auto = b.modoFirma === 'digital';
   const conFirma = auto && c.firma;
   const todas = filas(b), visibles = edicion ? todas : todas.filter(r => !r.excl);
-  const celdaId = (r, i) => !auto ? '' : c.firmaId ? anexoVariado(idSrc(c), r.key + '|id|' + c.firmaId.archivo, '# ID', { rot: 1.5, sc: [0.92, 1.03], pos: [0.05, 0.95] })
+  const celdaId = (r, i) => !auto ? '' : c.firmaId ? anexoVariado(idSrc(c), r.key + '|id|' + c.firmaId.archivo, '# ID', { rot: 1.5, sc: [0.92, 1], pos: [0.05, 0.95] })
     : c.firma ? esc(docFirmante(c)) // respaldo: número digitado mientras se anexa el escrito
     : (editable && i === 0 ? '<button class="cell-btn" type="button">📎 Adjuntar # ID</button>' : '');
   const celdaFirma = (r, i) => conFirma ? anexoVariado(firmaSrc(c), r.key + '|f|' + c.firma.archivo, 'firma')
