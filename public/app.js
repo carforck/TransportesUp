@@ -205,11 +205,12 @@ function barrasLista(filas, max = 6) {
   if (filas.length === max + 1) max++; // no agrupar un solo elemento en "Otros"
   const top = filas.slice(0, max), resto = filas.slice(max), mx = Math.max(1, ...filas.map(f => f.n));
   if (resto.length) top.push({ etiqueta: `Otros (${resto.length})`, n: resto.reduce((s, f) => s + f.n, 0) });
+  const total = filas.reduce((s, f) => s + f.n, 0) || 1;
   return top.map(f => `
     <${f.accion ? 'button type="button"' : 'div'} class="pb-row" ${f.accion ? `onclick="${f.accion}"` : ''} title="${esc(f.titulo || f.etiqueta)}">
       <span class="pb-name">${esc(f.etiqueta)}</span>
-      <span class="pb-track"><span class="pb-bar" style="width:${(f.n / mx * 100).toFixed(1)}%"></span></span>
-      <span class="pb-val">${nfmt(f.n)}</span></${f.accion ? 'button' : 'div'}>`).join('');
+      <span class="pb-val">${nfmt(f.n)} <small>${Math.round(f.n / total * 100)} %</small></span>
+      <span class="pb-track"><span class="pb-bar" style="width:${(f.n / mx * 100).toFixed(1)}%"></span></span></${f.accion ? 'button' : 'div'}>`).join('');
 }
 // Abrir una lista ya filtrada desde el panorama
 function irBitacoras(f = {}) { FILTRO.bitacoras = { q: '', m: '', cod: '', plan: '', est: '', al: '', tipo: '', ips: '', ...f, p: 1 }; location.hash === '#/bitacoras' ? router() : (location.hash = '#/bitacoras'); }
@@ -252,9 +253,18 @@ function viewDashboard(param = '') {
     <button type="button" class="kpi kpi-link ${tono}" onclick="${accion}">
       <div class="lbl">${lbl}</div><div class="val">${val}</div><div class="hint">${hint}</div>${extra}<span class="kpi-go" aria-hidden="true">→</span>
     </button>`;
-  const pend = (n, icono, texto, accion, tono = 'warn') => `
-    <button type="button" class="pend ${n ? tono : 'ok'}" onclick="${accion}" ${n ? '' : 'disabled'}>
-      <span class="pend-n">${n || '✓'}</span><span class="pend-t">${n ? icono + ' ' : ''}${n ? texto : 'Sin pendientes: ' + texto.replace(/^con /, '')}</span><span class="pend-go" aria-hidden="true">${n ? '→' : ''}</span></button>`;
+  // Qué atender: solo lo que tiene pendientes; si no hay nada, un estado "al día"
+  const pendientes = [
+    { n: conErr, tono: 'err', texto: `bitácora${conErr === 1 ? '' : 's'} con errores`, accion: `irBitacoras({ m: '${mes}', al: 'error' })` },
+    { n: sinFirma.length, tono: 'warn', texto: `paciente${sinFirma.length === 1 ? '' : 's'} sin firma o # ID`, accion: `irBitacoras({ m: '${mes}', est: 'faltan' })` },
+    { n: festivos, tono: 'warn', texto: 'con servicios en festivo o domingo', accion: `irBitacoras({ m: '${mes}', tipo: 'festivo' })` },
+    { n: arrastre, tono: 'warn', texto: 'con posible arrastre de Excel', accion: `irBitacoras({ m: '${mes}', tipo: 'arrastre' })` },
+    { n: horas, tono: 'warn', texto: 'con horas para revisar', accion: `irBitacoras({ m: '${mes}', tipo: 'horas' })` },
+    { n: agendadas.length, tono: 'info', texto: agendadas.length ? `firma${agendadas.length === 1 ? '' : 's'} agendada${agendadas.length === 1 ? '' : 's'} · próxima ${fechaLarga(agendadas[0].agendaFirma)}` : '', accion: `location.hash='#/agenda'` },
+  ].filter(p => p.n);
+  const nTareas = pendientes.filter(p => p.tono !== 'info').reduce((s, p) => s + p.n, 0);
+  const pend = p => `<button type="button" class="pend ${p.tono}" onclick="${p.accion}">
+      <span class="pend-n">${nfmt(p.n)}</span><span class="pend-t">${p.texto}</span><span class="pend-go" aria-hidden="true">›</span></button>`;
 
   app.innerHTML = `
     <div class="head dash-head"><div><h1>Panorama</h1><p class="sub">${periodoTxt(mes)} · ${esc(DB.config.eps)}</p></div>
@@ -263,7 +273,7 @@ function viewDashboard(param = '') {
           <select id="dMes" aria-label="Mes">${opMeses.map(x => `<option value="${x}" ${x === mes ? 'selected' : ''}>${periodoTxt(x)}${x === actual ? ' (actual)' : ''}</option>`).join('')}</select>
           <button class="icon-btn" id="dNext" aria-label="Mes siguiente">›</button></div></div></div>
 
-    <div class="kpis">
+    <div class="kpis kpi-strip">
       ${kpi({ accion: `location.hash='#/registros?m=${mes}'`, lbl: 'Servicios del mes', val: nfmt(dSel.total), hint: deltaTxt })}
       ${kpi({ accion: `irBitacoras({ m: '${mes}' })`, lbl: 'Pacientes con servicio', val: nfmt(dSel.pac), hint: `${delMes.length} bitácora${delMes.length === 1 ? '' : 's'}` })}
       ${kpi({ accion: `irBitacoras({ m: '${mes}', tipo: 'listas' })`, lbl: 'Listas para entregar', val: `${listas}<small> / ${delMes.length}</small>`, tono: delMes.length && listas === delMes.length ? 'ok' : '',
@@ -282,16 +292,10 @@ function viewDashboard(param = '') {
           ${meses.map(d => `<tr><td>${periodoTxt(d.m)}</td><td>${d.real}</td><td>${d.prog}</td><td><b>${d.total}</b></td><td>${d.proy != null ? '~' + d.proy : '—'}</td><td>${d.pac}</td></tr>`).join('')}</table></details>
       </section>
       <section class="card dash-pend">
-        <div class="pac-head"><div><h2>Qué atender</h2><small class="muted">${periodoTxt(mes)}</small></div></div>
-        <div class="pend-lista">
-          ${pend(conErr, '⛔', `bitácora${conErr === 1 ? '' : 's'} con errores`, `irBitacoras({ m: '${mes}', al: 'error' })`, 'err')}
-          ${pend(sinFirma.length, '✍️', `paciente${sinFirma.length === 1 ? '' : 's'} sin firma o # ID`, `irBitacoras({ m: '${mes}', est: 'faltan' })`)}
-          ${pend(festivos, '📅', 'con servicios en festivo o domingo', `irBitacoras({ m: '${mes}', tipo: 'festivo' })`)}
-          ${pend(arrastre, '🔁', 'con posible arrastre de Excel', `irBitacoras({ m: '${mes}', tipo: 'arrastre' })`)}
-          ${pend(horas, '🕑', 'con horas para revisar', `irBitacoras({ m: '${mes}', tipo: 'horas' })`)}
-          ${pend(agendadas.length, '🗓️', agendadas.length ? `firma${agendadas.length === 1 ? '' : 's'} agendada${agendadas.length === 1 ? '' : 's'} · próxima ${fechaLarga(agendadas[0].agendaFirma)}` : 'firmas agendadas', `location.hash='#/agenda'`, 'info')}
-        </div>
-        ${delMes.length ? `<button type="button" class="btn sm" style="margin-top:12px" onclick="exportarLote('${mes}')">⬇ Exportar lote de ${periodoTxt(mes)}</button>` : ''}
+        <div class="pac-head"><div><h2>Qué atender</h2><small class="muted">${nTareas ? `${nfmt(nTareas)} pendiente${nTareas === 1 ? '' : 's'} en ${periodoTxt(mes)}` : periodoTxt(mes)}</small></div></div>
+        ${pendientes.length ? `<div class="pend-lista">${pendientes.map(pend).join('')}</div>`
+          : `<div class="al-dia"><span class="al-dia-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span><div><b>Todo al día</b><small>Sin errores ni firmas pendientes este mes.</small></div></div>`}
+        ${delMes.length ? `<button type="button" class="btn sm primary dash-export" onclick="exportarLote('${mes}')">Exportar lote de ${periodoTxt(mes)}</button>` : ''}
       </section>
     </div>
 
@@ -1190,13 +1194,14 @@ function usoEspacio() {
 // Tarjeta del Panorama: cuánto se lleva del plan gratuito
 function tarjetaEspacio() {
   const u = usoEspacio(), tono = u.peor >= 0.9 ? 'mal' : u.peor >= 0.7 ? 'alerta' : '';
-  const barra = (lbl, n, lim, limTxt) => `<div class="esp"><div class="esp-top"><b>${lbl}</b><span>${fmtBytes(n)} de ${limTxt} · ${(n / lim * 100).toFixed(n / lim < 0.01 ? 2 : 1)} %</span></div>
-    <div class="meter ${tono}"><span style="width:${pctBarra(n, lim)}%"></span></div></div>`;
-  return `<section class="card espacio"><div class="pac-head"><div><h2>Almacenamiento</h2><small class="muted">Plan gratuito de Supabase</small></div>
-      <a class="btn sm" href="#/config">Ver detalle →</a></div>
-    ${barra('Firmas e # ID', u.bytesArchivos, u.LIM_ARCH, '1 GB')}
-    ${barra('Datos (clientes y bitácoras)', u.bytesDatos, u.LIM_DATOS, '500 MB')}
-    <small class="muted">${u.anexos.length} anexo(s)${u.porCliente ? ` · ~${fmtBytes(u.porCliente)} por cliente · alcanza para ~${u.cupo.toLocaleString('es-CO')} clientes` : ''}${tono ? ' · <b>conviene pasar a un plan pago o depurar</b>' : ''}</small>
+  const pctTxt = (n, lim) => (n / lim * 100).toLocaleString('es-CO', { maximumFractionDigits: n / lim < 0.01 ? 2 : 1 }) + ' %';
+  const barra = (lbl, n, lim, limTxt) => `<div class="esp"><div class="esp-top"><span class="esp-lbl">${lbl}</span><b>${pctTxt(n, lim)}</b></div>
+    <div class="meter ${tono}" role="img" aria-label="${lbl}: ${pctTxt(n, lim)} usado"><span style="width:${pctBarra(n, lim)}%"></span></div>
+    <small class="muted">${fmtBytes(n)} de ${limTxt}</small></div>`;
+  return `<section class="card espacio"><div class="pac-head"><div><h2>Almacenamiento</h2><small class="muted">Plan gratuito de Supabase${u.cupo ? ` · alcanza para ~${u.cupo.toLocaleString('es-CO')} pacientes` : ''}</small></div>
+      <a class="link-sm" href="#/config">Detalle ›</a></div>
+    <div class="esp-grid">${barra('Firmas e # ID', u.bytesArchivos, u.LIM_ARCH, '1 GB')}${barra('Datos', u.bytesDatos, u.LIM_DATOS, '500 MB')}</div>
+    ${tono ? '<small class="esp-aviso">Conviene pasar a un plan pago o depurar archivos.</small>' : ''}
   </section>`;
 }
 function viewConfig() {

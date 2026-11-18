@@ -646,8 +646,69 @@ button.pb-row:hover { background: var(--bg); }
 .cam video { width: 100%; max-height: 60vh; border-radius: 8px; display: block; background: #000; }
 .cam .btn { background: #fff; }
 
-/* ===== Panorama: almacenamiento del plan gratuito ===== */
+/* ===== Panorama · versión minimalista ===== */
+/* Tarjetas: sin borde duro, sombra muy suave, más aire */
+.dash-grid .card, .card.espacio { border: 1px solid #EEE8F2; box-shadow: 0 1px 2px #241B2B08, 0 8px 24px #6E2A8E0A; border-radius: 18px; padding: 20px 22px; }
+.dash-grid .card h2, .card.espacio h2 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: -.01em; }
+.dash-grid .pac-head, .card.espacio .pac-head { margin-bottom: 14px; align-items: flex-start; }
+.dash-grid .pac-head small, .card.espacio .pac-head small { font-size: 12px; }
+
+/* Indicadores: una sola franja dividida por líneas finas */
+.kpi-strip { gap: 0 !important; background: var(--card); border: 1px solid #EEE8F2; border-radius: 18px; box-shadow: 0 1px 2px #241B2B08, 0 8px 24px #6E2A8E0A; overflow: hidden; }
+.kpi-strip .kpi { border: 0; border-radius: 0; background: transparent; padding: 18px 22px 20px; box-shadow: none !important; transform: none !important; }
+.kpi-strip .kpi + .kpi { border-left: 1px solid #F0EAF3; }
+.kpi-strip .kpi:hover { background: #FBF8FD; }
+.kpi-strip .kpi .lbl { font-size: 12px; text-transform: none; letter-spacing: 0; font-weight: 500; }
+.kpi-strip .kpi .val { font-size: 34px; font-weight: 700; letter-spacing: -.03em; line-height: 1.15; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.kpi-strip .kpi.ok .val { color: var(--ok); } .kpi-strip .kpi.warn .val { color: var(--warn); }
+.kpi-strip .kpi .hint { font-size: 12px; margin-top: 2px; }
+.kpi-strip .kpi .meter { height: 4px; margin: 10px 0 0; }
+.kpi-strip .kpi-go { opacity: 0; font-weight: 400; transition: opacity .15s, transform .15s; }
+.kpi-strip .kpi:hover .kpi-go, .kpi-strip .kpi:focus-visible .kpi-go { opacity: 1; }
+@media (max-width: 999px) {
+  .kpi-strip .kpi:nth-child(odd) { border-left: 0; }
+  .kpi-strip .kpi:nth-child(n+3) { border-top: 1px solid #F0EAF3; }
+  .kpi-strip .kpi { padding: 14px 16px 16px; }
+  .kpi-strip .kpi .val { font-size: 28px; }
+}
+
+/* Qué atender: filas limpias, número en píldora suave, sin emojis */
+.dash-pend .pend-lista { gap: 2px; }
+.dash-pend .pend { grid-template-columns: 40px minmax(0, 1fr) 14px; border: 0; background: transparent; padding: 9px 8px; border-radius: 12px; font-size: 13.5px; }
+.dash-pend .pend:hover { background: #FBF8FD; }
+.dash-pend .pend + .pend { box-shadow: 0 -1px 0 #F3EEF6; }
+.dash-pend .pend-n { font-size: 14px; font-weight: 700; padding: 3px 0; border-radius: 99px; font-variant-numeric: tabular-nums; }
+.dash-pend .pend-go { font-size: 18px; font-weight: 400; color: #B9AEC1; }
+.dash-pend .pend:hover .pend-go { color: var(--magenta); }
+.al-dia { display: flex; gap: 14px; align-items: center; padding: 14px; border-radius: 14px; background: #F1FAF5; }
+.al-dia-ico { width: 40px; height: 40px; border-radius: 50%; background: var(--ok); display: grid; place-items: center; flex-shrink: 0; }
+.al-dia-ico svg { width: 22px; height: 22px; fill: #fff; }
+.al-dia b { display: block; font-weight: 600; }
+.al-dia small { color: var(--muted); font-size: 12.5px; }
+.dash-export { margin-top: 16px; width: 100%; justify-content: center; }
+
+/* Distribución: nombre y valor arriba, barra fina debajo */
+.dash-grid .pb { gap: 6px; }
+.dash-grid .pb-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "n v" "t t"; row-gap: 6px; column-gap: 12px; padding: 8px 8px 10px; border-radius: 12px; }
+.dash-grid .pb-name { grid-area: n; font-weight: 500; font-size: 13px; }
+.dash-grid .pb-val { grid-area: v; font-size: 13px; font-weight: 600; }
+.dash-grid .pb-val small { color: var(--muted); font-weight: 500; margin-left: 4px; }
+.dash-grid .pb-track { grid-area: t; height: 6px; background: #F3EEF6; border-radius: 99px; overflow: hidden; }
+.dash-grid .pb-bar { height: 6px; border-radius: 99px; background: var(--grad); }
+.dash-grid button.pb-row:hover { background: #FBF8FD; }
+
+/* Almacenamiento: compacto, dos medidores lado a lado */
 .card.espacio { margin-top: 16px; }
-.card.espacio .esp { margin-bottom: 10px; }
+.esp-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+@media (min-width: 700px) { .esp-grid { grid-template-columns: 1fr 1fr; gap: 28px; } }
+.card.espacio .esp { margin: 0; }
+.card.espacio .esp-top { align-items: baseline; font-size: 13px; }
+.card.espacio .esp-top b { font-size: 18px; font-weight: 700; letter-spacing: -.02em; color: var(--ink); font-variant-numeric: tabular-nums; }
+.card.espacio .esp-lbl { color: var(--muted); }
+.card.espacio .meter { height: 6px; margin: 8px 0 6px; background: #F3EEF6; }
+.card.espacio small { font-size: 12px; }
+.esp-aviso { display: block; margin-top: 12px; color: var(--warn); font-weight: 600; }
+.link-sm { font-size: 13px; font-weight: 600; color: var(--morado); text-decoration: none; padding: 4px 2px; }
+.link-sm:hover { color: var(--magenta); }
 .meter.alerta span { background: #E8A400; }
 .meter.mal span { background: var(--danger); }
