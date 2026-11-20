@@ -434,9 +434,9 @@ function viewClientes() {
 }
 
 function formCliente(id, prefill = {}, onSaved) {
-  const ult = DB.clientes[DB.clientes.length - 1] || {};
-  const c = id ? cliente(id) : { firmante: 'acudiente', origen: ult.origen || '', ips: ult.ips || '', regreso: ult.regreso || '', horaIda: ult.horaIda || '06:20', horaRegreso: ult.horaRegreso || '09:00', ...prefill };
-  const f = (k, l, extra = '') => `<label>${l}<input name="${k}" value="${esc(c[k])}" ${extra}></label>`;
+  // Nuevo: campos vacíos (nada copiado de otro paciente); al escribir se sugieren valores ya guardados
+  const c = id ? cliente(id) : { firmante: 'acudiente', ...prefill };
+  const f = (k, l, extra = '') => `<label>${l}<input name="${k}" value="${esc(c[k])}" autocomplete="off" ${extra}></label>`;
   const m = modal(`
     <h2 style="margin-top:0">${id ? 'Editar' : 'Nuevo'} cliente</h2>
     <form id="fc">
@@ -448,14 +448,14 @@ function formCliente(id, prefill = {}, onSaved) {
           <label><input type="radio" name="firmante" value="paciente" ${esPaciente(c) ? 'checked' : ''}> El mismo paciente</label>
         </div>
         <div class="form" id="acuFields">
-          ${f('acudiente', 'Nombre del acudiente')}${f('docAcudiente', '# ID acudiente', 'inputmode="numeric"')}${f('telefono', 'Teléfono de contacto', 'inputmode="tel"')}</div></fieldset>
+          ${f('acudiente', 'Nombre del acudiente', 'list="sugAcu"')}${f('docAcudiente', '# ID acudiente', 'inputmode="numeric"')}${f('telefono', 'Teléfono de contacto', 'inputmode="tel"')}</div></fieldset>
       <fieldset><legend>Ruta principal</legend><div class="form">
-        ${f('origen', 'Dirección de recogida (ida)', 'required')}${f('ips', 'IPS destino', 'required list="ipsSug"')}
-        <datalist id="ipsSug">${[...new Set(DB.clientes.map(x => x.ips).filter(Boolean))].sort().map(x => `<option value="${esc(x)}">`).join('')}</datalist>
-        ${f('regreso', 'Punto de regreso', 'required')}
-        <label>Código de tecnología (por defecto)<select name="codigo">
-          ${codigos().map(k => `<option value="${esc(k.codigo)}" ${k.codigo === (c.codigo || DB.config.codigo) ? 'selected' : ''}>${esc(k.codigo)} · ${esc(k.descripcion.slice(0, 60))}</option>`).join('')}</select></label>
-        ${f('horaIda', 'Hora ida', 'type="time" required')}${f('horaRegreso', 'Hora regreso', 'type="time" required')}</div></fieldset>
+        ${f('origen', 'Dirección de recogida (ida)', 'required list="sugDir"')}${f('ips', 'IPS destino', 'required list="sugIps"')}
+        ${sugerencias()}
+        ${f('regreso', 'Punto de regreso', 'required list="sugDir"')}
+        <label>Código de tecnología (por defecto)<select name="codigo" required>
+          ${id ? '' : '<option value="" selected disabled>Elija el código…</option>'}${codigos().map(k => `<option value="${esc(k.codigo)}" ${id && k.codigo === (c.codigo || DB.config.codigo) ? 'selected' : ''}>${esc(k.codigo)} · ${esc(k.descripcion.slice(0, 60))}</option>`).join('')}</select></label>
+        ${f('horaIda', 'Hora ida', 'type="time" required list="sugHora"')}${f('horaRegreso', 'Hora regreso', 'type="time" required list="sugHora"')}</div></fieldset>
       <fieldset><legend>Otras rutas <small class="muted">(opcional)</small></legend>
         <p class="muted" style="margin:0 0 10px">Si el paciente a veces va a otra IPS u otro horario, agréguela aquí. Al hacer la bitácora se eligen los días de cada ruta.</p>
         <div id="rutasExtra"></div>
@@ -481,7 +481,7 @@ function formCliente(id, prefill = {}, onSaved) {
   const cajaRutas = $('#rutasExtra', m);
   (c.rutas || []).forEach(r => cajaRutas.insertAdjacentHTML('beforeend', formRuta(r, cajaRutas.children.length + 1)));
   $('#addRuta', m).onclick = () => {
-    cajaRutas.insertAdjacentHTML('beforeend', formRuta({ horaIda: $('input[name=horaIda]', m).value, horaRegreso: $('input[name=horaRegreso]', m).value, origen: $('input[name=origen]', m).value, regreso: $('input[name=regreso]', m).value }, cajaRutas.children.length + 1));
+    cajaRutas.insertAdjacentHTML('beforeend', formRuta({}, cajaRutas.children.length + 1));
     $('.ruta-form:last-child [data-k=nombre]', cajaRutas).focus();
   };
   cajaRutas.onclick = e => {
@@ -526,20 +526,31 @@ function formCliente(id, prefill = {}, onSaved) {
   };
 }
 
+// Sugerencias al escribir: valores ya guardados en la base (los más usados primero)
+function sugerencias() {
+  const rutas = DB.clientes.flatMap(c => rutasDe(c));
+  const lista = (id, valores) => {
+    const n = new Map(); valores.map(v => String(v || '').trim()).filter(Boolean).forEach(v => n.set(v, (n.get(v) || 0) + 1));
+    return `<datalist id="${id}">${[...n].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 300).map(([v]) => `<option value="${esc(v)}">`).join('')}</datalist>`;
+  };
+  return lista('sugDir', rutas.flatMap(r => [r.origen, r.regreso])) + lista('sugIps', rutas.map(r => r.ips))
+    + lista('sugAcu', DB.clientes.map(c => c.acudiente)) + lista('sugHora', rutas.flatMap(r => [r.horaIda, r.horaRegreso]))
+    + lista('sugRuta', DB.clientes.flatMap(c => (c.rutas || []).map(r => r.nombre)));
+}
 // Tarjeta editable de una ruta adicional (también se usa al agregar una ruta desde la bitácora)
 function formRuta(r = {}, n = 1) {
   const v = k => esc(r[k] || ''), cod = r.codigo || '';
   return `<div class="ruta-form" data-id="${esc(r.id || '')}">
     <div class="ruta-form-head"><b class="ruta-n">Ruta ${n + 1}</b><button type="button" class="btn sm danger" data-quitar-ruta>✕ Quitar</button></div>
     <div class="form">
-      <label class="full">Nombre corto <small class="muted">(ej. Control Misericordia)</small><input data-k="nombre" value="${v('nombre')}" maxlength="60"></label>
-      <label>Dirección de recogida (ida)<input data-k="origen" value="${v('origen')}"></label>
-      <label>IPS destino<input data-k="ips" value="${v('ips')}" list="ipsSug"></label>
-      <label>Punto de regreso<input data-k="regreso" value="${v('regreso')}"></label>
+      <label class="full">Nombre corto <small class="muted">(ej. Control Misericordia)</small><input data-k="nombre" value="${v('nombre')}" maxlength="60" list="sugRuta" autocomplete="off"></label>
+      <label>Dirección de recogida (ida)<input data-k="origen" value="${v('origen')}" list="sugDir" autocomplete="off"></label>
+      <label>IPS destino<input data-k="ips" value="${v('ips')}" list="sugIps" autocomplete="off"></label>
+      <label>Punto de regreso<input data-k="regreso" value="${v('regreso')}" list="sugDir" autocomplete="off" placeholder="Si se deja vacío, la misma de recogida"></label>
       <label>Código <small class="muted">(vacío = el de la bitácora)</small><select data-k="codigo"><option value="">El de la bitácora</option>
         ${codigos().map(k => `<option value="${esc(k.codigo)}" ${k.codigo === cod ? 'selected' : ''}>${esc(k.codigo)} · ${esc(k.descripcion.slice(0, 50))}</option>`).join('')}</select></label>
-      <label>Hora ida<input type="time" data-k="horaIda" value="${v('horaIda')}"></label>
-      <label>Hora regreso<input type="time" data-k="horaRegreso" value="${v('horaRegreso')}"></label>
+      <label>Hora ida<input type="time" data-k="horaIda" value="${v('horaIda')}" list="sugHora"></label>
+      <label>Hora regreso<input type="time" data-k="horaRegreso" value="${v('horaRegreso')}" list="sugHora"></label>
     </div></div>`;
 }
 const renumerarRutas = caja => $$('.ruta-n', caja).forEach((x, i) => x.textContent = `Ruta ${i + 2}`);
@@ -745,7 +756,7 @@ async function quitarFecha(bid, f, ruta = RUTA_P) {
 function agregarFecha(cid, mes) {
   const c = cliente(cid);
   const md = modal(`<h2 style="margin-top:0">Agregar servicio</h2><p class="sub">${esc(c.paciente)} · se agregan ida y regreso con la ruta fija del cliente.</p>
-    <label>Fecha del servicio<input type="date" id="nfch" value="${mes ? mes + '-01' : hoy()}"></label>
+    <label>Fecha del servicio<input type="date" id="nfch" ${mesValido(mes) ? `min="${mes}-01" max="${mes}-${new Date(+mes.slice(0, 4), +mes.slice(5), 0).getDate()}"` : ''}></label>
     <div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn" onclick="closeModal()">Cancelar</button><button class="btn primary" id="ok">Agregar</button></div>`);
   const claveAdd = nuevaClave();
   $('#ok', md).onclick = async () => {
@@ -999,8 +1010,8 @@ function viewBitacora(param = '') {
     const c = cliente(b.clienteId); if (!c) return;
     const md = modal(`<h2 style="margin-top:0">Agregar otra ruta</h2>
       <p class="sub">${esc(c.paciente)} · la ruta queda guardada en el paciente para los próximos meses.</p>
-      <div id="nr">${formRuta({ origen: c.origen, regreso: c.regreso, horaIda: c.horaIda, horaRegreso: c.horaRegreso }, (c.rutas || []).length + 1)}</div>
-      <datalist id="ipsSug">${[...new Set(DB.clientes.map(x => x.ips).filter(Boolean))].sort().map(x => `<option value="${esc(x)}">`).join('')}</datalist>
+      <div id="nr">${formRuta({}, (c.rutas || []).length + 1)}</div>
+      ${sugerencias()}
       <fieldset style="margin-top:12px"><legend>¿Dónde van los servicios de esta ruta?</legend>
         <div class="radios">
           <label><input type="radio" name="dondeR" value="misma" checked> En esta misma bitácora</label>
