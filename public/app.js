@@ -392,7 +392,7 @@ function viewClientes() {
   const opt = (v, sel, txt = v) => `<option value="${esc(v)}" ${v === sel ? 'selected' : ''}>${esc(txt)}</option>`;
   app.innerHTML = `
     <div class="head"><div><h1>Clientes</h1><p class="sub">Paciente, quien firma, ruta fija y la firma que se anexa automáticamente a las bitácoras</p></div>
-      <div class="row"><button class="btn" onclick="importarLote()">⬆ Importar PDF</button><button class="btn primary" onclick="formCliente()">+ Nuevo cliente</button></div></div>
+      <div class="row"><button class="btn primary" onclick="formCliente()">+ Nuevo cliente</button></div></div>
     <div class="filtros">
       <label>Buscar<input id="fq" type="search" placeholder="Nombre o documento" value="${esc(F.q)}"></label>
       <label>Código<select id="fcod"><option value="">Todos</option>${codsUsados.map(c => opt(c, F.cod)).join('')}</select></label>
@@ -673,7 +673,7 @@ function viewRegistros(qs = '') {
 
   app.innerHTML = `
     <div class="head"><div><h1>Registros</h1><p class="sub">Servicios de cada paciente en lista, por mes</p></div>
-      <div class="row"><button class="btn" onclick="importarLote()" title="Sube una bitácora PDF ya hecha (TNA_…pdf): se leen el paciente y las fechas y se crea la bitácora con la firma anexada">⬆ Importar bitácora PDF</button></div></div>
+</div>
     <div class="filtros">
       <label>Mes<select id="fm"><option value="todos" ${mes === 'todos' ? 'selected' : ''}>Todos los meses</option>
         ${[...new Set([...meses, mes === 'todos' ? null : mes].filter(Boolean))].sort().reverse().map(m => `<option value="${m}" ${m === mes ? 'selected' : ''}>${periodoTxt(m)}</option>`).join('')}</select></label>
@@ -800,8 +800,7 @@ function viewBitacoras(param = '') {
   }).join('');
   app.innerHTML = `
     <div class="head"><div><h1>Bitácoras</h1><p class="sub">Una por paciente, mes y código · cada fecha genera las filas de ida y regreso</p></div>
-      <div class="row"><button class="btn" onclick="importarLote()" title="Uno o varios PDF (TNA_…pdf): se crean clientes y bitácoras y se revisan antes de guardar">⬆ Importar PDF</button>
-        <button class="btn" onclick="exportarLote(FILTRO.bitacoras.m)">⬇ Exportar lote</button>
+      <div class="row"><button class="btn" onclick="exportarLote(FILTRO.bitacoras.m)">⬇ Exportar lote</button>
         <a class="btn primary" href="#/bitacora/nueva">+ Nueva bitácora</a></div></div>
     <div class="filtros">
       <label>Mes<select id="bm"><option value="">Todos</option>${meses.map(m => opt(m, F.m, periodoTxt(m))).join('')}</select></label>
@@ -1350,7 +1349,7 @@ function viewConfig() {
       ${f('titulo', 'Título del formato')}${f('descripcion', 'Descripción por defecto (si el código no está en el catálogo)')}
     </div><div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn primary">Guardar</button></div></form>
     <form class="card" id="fcods"><h2 style="margin-top:0">Catálogo de códigos de tecnología</h2>
-      <p class="muted" style="margin:0 0 10px">Cada bitácora usa su código y la descripción sale de aquí. Al importar PDF se reconoce el código automáticamente.</p>
+      <p class="muted" style="margin:0 0 10px">Cada bitácora usa su código y la descripción sale de aquí.</p>
       <div class="tabla-scroll"><table class="list cat"><tr><th style="width:150px">Código</th><th>Descripción (como sale en la bitácora)</th><th style="width:70px">Uso</th><th></th></tr>
         <tbody id="codRows">${codigos().map(k => filaCodigo(k)).join('')}</tbody></table></div>
       <div class="row" style="justify-content:space-between;margin-top:10px"><button type="button" class="btn sm" id="addCod">+ Código</button><button class="btn primary">Guardar catálogo</button></div></form>

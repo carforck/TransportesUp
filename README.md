@@ -21,7 +21,6 @@ Antes, la bitácora se hacía en Excel, se imprimía, el acudiente la firmaba a 
 | **Bitácoras** | Una bitácora por cliente y mes: calendario navegable, vista previa del documento oficial, edición directa de celdas, duplicar a otro mes, imprimir o descargar PDF. |
 | **Agenda de firmas** | Programar cuándo se recoge la firma, marcar como firmada o reabrir. |
 | **Campos fijos** | Datos que se repiten en todas las bitácoras: empresa, NIT, EPS, título del formato, código y descripción de la tecnología. |
-| **Importar bitácora PDF** | Sube una bitácora ya hecha (`TNA_…pdf` o `PACIENTE - MES AÑO.pdf`). Lee el ID del paciente y las fechas, y crea la bitácora sin marcarlas a mano. |
 
 ### Campos fijos vs. variables
 
@@ -129,7 +128,7 @@ TransporUp/
 - **Mobile-first**:
   - En celular: barra superior con menú ☰, tablas que se convierten en tarjetas, ventanas tipo hoja inferior y botones de mínimo 44 px.
   - En escritorio: menú lateral **colapsable** a solo iconos, que recuerda su estado.
-- **Recursos externos**: la fuente Poppins (Google Fonts) y **pdf.js**, que se carga desde cdnjs solo al importar una bitácora PDF.
+- **Recursos externos**: la fuente Poppins (Google Fonts) y, al exportar, html2canvas, jsPDF y JSZip desde cdnjs.
 - **Impresión**: `@media print` oculta la interfaz y deja solo las hojas del formato.
 
 ### Modelo de datos (resumen)
@@ -236,10 +235,9 @@ Pensado para no pasarse de los límites gratuitos (Supabase: 1 GB de archivos y 
 
 Los scripts leen sus variables de `.env.local` (ver `.env.example`).
 
-## Importación masiva, revisión y entrega por lote (`public/lote.js`)
+## Revisión y entrega por lote (`public/lote.js`)
 
-- **Importar PDF** (uno o toda la carpeta de una entrega, `TNA_<NIT>_<NOMBRE>[ PBS| NO PBS].pdf`): pdf.js lee la tabla por columnas (cada fila se ancla en el ITEM). De cada archivo salen paciente, ID, ruta, IPS, horas, código, PBS/NO PBS y fechas; lo que cambia en una fecha (otra hora o dirección) queda como corrección de esa fila. En cada fecha la ida es el tramo más temprano. Todo se guarda en **una sola escritura** (`POST /api/lote`).
-- **Revisión automática** (al importar, en la lista y en cada bitácora): festivos de Colombia (Ley Emiliani + Semana Santa), domingos/sábados, horas no válidas o poco comunes, regreso antes de la ida, *arrastre de Excel* (horas o direcciones que avanzan en pasos fijos), código fuera de catálogo, código POS/NO POS vs PBS/NO PBS, firma o # ID faltante.
+- **Revisión automática** (en la lista y en cada bitácora): festivos de Colombia (Ley Emiliani + Semana Santa), domingos/sábados, horas no válidas o poco comunes, regreso antes de la ida, *arrastre de Excel* (horas o direcciones que avanzan en pasos fijos), código fuera de catálogo, código POS/NO POS vs PBS/NO PBS, firma o # ID faltante.
 - **Catálogos editables** (Campos fijos): códigos de tecnología (la descripción del documento sale de aquí) e IPS (agrupa las distintas formas de escribir la misma sede).
 - **Exportar lote**: ZIP del mes con un PDF por bitácora, nombrado como lo entrega la empresa, + `RESUMEN <MES>.csv`. Las hojas se paginan según el alto real de las filas para que siempre quepan en carta horizontal.
 - Listas con **filtros y paginación**; bitácoras **agrupadas por mes**; en cada bitácora **← Volver / ‹ Anterior / Siguiente ›** (Alt + ← / →).
