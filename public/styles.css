@@ -712,3 +712,31 @@ button.pb-row:hover { background: var(--bg); }
 .link-sm:hover { color: var(--magenta); }
 .meter.alerta span { background: #E8A400; }
 .meter.mal span { background: var(--danger); }
+
+/* ===== Varias rutas por paciente ===== */
+.r0 { --rc: #7A2A8F; --rc-bg: #F4EAF8; } .r1 { --rc: #0E7C7C; --rc-bg: #E3F4F4; } .r2 { --rc: #C2620A; --rc-bg: #FCEFE2; }
+.r3 { --rc: #2F62C4; --rc-bg: #E6EEFB; } .r4 { --rc: #B3124F; --rc-bg: #FBE6EE; } .r5 { --rc: #4F7D12; --rc-bg: #ECF4E1; }
+.rutas-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 12px; }
+.rutas-bar:empty { display: none; }
+.rutas-lbl { width: 100%; font-size: 12px; color: var(--muted); font-weight: 600; }
+.ruta-opc { display: flex; align-items: center; gap: 10px; text-align: left; font: inherit; cursor: pointer; background: #fff;
+  border: 1.5px solid var(--line); border-radius: 12px; padding: 8px 12px; min-width: 0; flex: 1 1 220px; transition: border-color .15s, background .15s; }
+.ruta-opc:hover { border-color: var(--rc); }
+.ruta-opc.activa { border-color: var(--rc); background: var(--rc-bg); box-shadow: 0 0 0 1px var(--rc) inset; }
+.ruta-opc span { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.ruta-opc b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ruta-opc small { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ruta-opc em { font-style: normal; font-size: 12px; font-weight: 700; color: var(--rc); white-space: nowrap; }
+.ruta-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--rc); flex-shrink: 0; }
+.ruta-add { flex: 0 0 auto; }
+/* Calendario con varias rutas: el día marcado toma el color de la ruta activa; puntos = otras rutas ese día */
+.cal button { position: relative; }
+.cal.multi button.on { background: var(--rc); }
+.cal.multi[data-r="0"] { --rc: #7A2A8F; } .cal.multi[data-r="1"] { --rc: #0E7C7C; } .cal.multi[data-r="2"] { --rc: #C2620A; }
+.cal.multi[data-r="3"] { --rc: #2F62C4; } .cal.multi[data-r="4"] { --rc: #B3124F; } .cal.multi[data-r="5"] { --rc: #4F7D12; }
+.cal-dots { position: absolute; left: 0; right: 0; bottom: 3px; display: flex; justify-content: center; gap: 3px; pointer-events: none; }
+.cal-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--rc); box-shadow: 0 0 0 1.5px #fff; }
+/* Ficha del paciente: tarjetas de rutas adicionales */
+.ruta-form { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 10px; background: #FCFAFD; }
+.ruta-form-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.ruta-chip { display: inline-block; margin-top: 3px; font-size: 11px; font-weight: 600; color: var(--rc); background: var(--rc-bg); border-radius: 99px; padding: 1px 8px; }

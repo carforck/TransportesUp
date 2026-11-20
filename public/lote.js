@@ -106,7 +106,11 @@ function validarBitacora(b, c = cliente(b.clienteId)) {
 function _validar(b, c) {
   const out = [], add = (nivel, texto) => out.push({ nivel, texto });
   if (!c) return [{ nivel: 'error', texto: 'La bitácora no tiene cliente' }];
-  const todas = [...new Set(b.fechas || [])].sort();
+  const todas = [...new Set([...(b.fechas || []), ...Object.values(b.rutasExtra || {}).flat()])].sort(); // todas las rutas
+  const idsRutas = new Set(rutasDe(c).map(r => r.id));
+  const huerfanas = Object.keys(b.rutasExtra || {}).filter(r => !idsRutas.has(r) && (b.rutasExtra[r] || []).length);
+  if (huerfanas.length) add('aviso', `${huerfanas.length === 1 ? 'Una ruta' : huerfanas.length + ' rutas'} de esta bitácora ya no existe${huerfanas.length === 1 ? '' : 'n'} en el paciente: sus días no salen en el documento`);
+  for (const r of rutasDe(c).filter(r => r.codigo && fechasRuta(b, r.id).length && !codigos().some(x => x.codigo === r.codigo))) add('aviso', `El código ${r.codigo} de la ruta "${r.nombre || r.ips}" no está en el catálogo`);
   const malasF = todas.filter(f => !fechaValida(f));
   if (malasF.length) add('error', `Fecha(s) que no existen: ${malasF.slice(0, 4).join(', ')}${malasF.length > 4 ? '…' : ''}`);
   const fechas = todas.filter(fechaValida);
@@ -133,13 +137,21 @@ function _validar(b, c) {
     const h = normalizarHora(r.hora);
     if (h.error) { malas.push(`${fechaDoc(r.fecha)} ${r.tramo === 'ida' ? 'ida' : 'regreso'} "${r.hora || 'vacía'}"`); continue; }
     const min = minComparable(h); // "1:30" sin a. m./p. m. → 1:30 p. m.
-    porTramo[r.tramo].push({ fecha: r.fecha, min, hhmm: hhmmDe(min), dir: r.dir });
+    porTramo[r.tramo].push({ fecha: r.fecha, ruta: r.ruta || 'p', min, hhmm: hhmmDe(min), dir: r.dir });
   }
   if (malas.length) add('error', `Hora no válida: ${malas.slice(0, 4).join(', ')}${malas.length > 4 ? '…' : ''}`);
-  const regAntes = porTramo.reg.filter(r => { const i = porTramo.ida.find(x => x.fecha === r.fecha); return i && r.min <= i.min; });
-  if (regAntes.length) add('error', `Regreso igual o anterior a la ida: ${regAntes.map(r => fechaDoc(r.fecha)).join(', ')}`);
+  const regAntes = porTramo.reg.filter(r => { const i = porTramo.ida.find(x => x.fecha === r.fecha && x.ruta === r.ruta); return i && r.min <= i.min; });
+  if (regAntes.length) add('error', `Regreso igual o anterior a la ida: ${[...new Set(regAntes.map(r => fechaDoc(r.fecha)))].join(', ')}`);
+  // Dos rutas el mismo día: la ida de la segunda no debe empezar antes del regreso de la primera
+  const cruces = [...new Set(porTramo.ida.map(r => r.fecha))].filter(f => {
+    const idas = porTramo.ida.filter(r => r.fecha === f).sort((x, y) => x.min - y.min);
+    return idas.some((r, i) => { if (!i) return false; const reg = porTramo.reg.find(x => x.fecha === f && x.ruta === idas[i - 1].ruta); return reg && r.min < reg.min; });
+  });
+  if (cruces.length) add('aviso', `Rutas del mismo día que se cruzan de hora: ${cruces.map(fechaDoc).join(', ')}`);
   const raras = [...porTramo.ida.filter(r => r.min < 4 * 60 || r.min > 21 * 60), ...porTramo.reg.filter(r => r.min < 5 * 60 || r.min > 21 * 60)];
   if (raras.length) add('aviso', `Horas poco comunes (antes de 4–5 a. m. o después de 9 p. m.): ${[...new Set(raras.map(r => `${fechaDoc(r.fecha)} ${hora12(r.hhmm)}`))].slice(0, 4).join(', ')}${raras.length > 4 ? '…' : ''}`);
+  // Desde aquí, los patrones de arrastre se miran solo en la ruta principal (mezclar rutas daría falsas alarmas)
+  porTramo.ida = porTramo.ida.filter(r => r.ruta === 'p'); porTramo.reg = porTramo.reg.filter(r => r.ruta === 'p');
 
   // Patrones de arrastre de Excel: valores que avanzan en un paso fijo día a día
   // "Escalera": la racha más larga de diferencias seguidas, iguales y que cumplen pasoOk (p. ej. 21, 22, 23, 24 → 3 pasos de +1)
@@ -412,7 +424,7 @@ function importarLote() {
             <td><b>${esc(it.cliente.paciente)}</b><br><small class="muted">CC ${esc(it.cliente.docPaciente)} · ${esc(ipsCanon(it.cliente.ips))}</small></td>
             <td>${esc(b.codigo || '—')} ${planBadge(b.plan)}</td>
             <td>${periodoTxt(b.periodo)}<br><small class="muted">${b.fechas.length} servicios</small></td>
-            <td>${it.existente ? '<span class="badge b-dig">Existente</span><br><small class="muted">se actualizan ruta y horas; conserva firma e ID</small>' : '<span class="badge b-ok">Nuevo</span>'}${b._previa ? `<br><span class="badge b-warn">Ya tiene bitácora de este mes (${fechasDe(b._previa).length} fechas)</span><br><small class="muted">Si la marca, se reemplaza por la del PDF</small>` : ''}</td>
+            <td>${it.existente ? '<span class="badge b-dig">Existente</span><br><small class="muted">se actualizan ruta y horas; conserva firma e ID</small>' : '<span class="badge b-ok">Nuevo</span>'}${b._previa ? `<br><span class="badge b-warn">Ya tiene bitácora de este mes (${nServicios(b._previa)} servicios)</span><br><small class="muted">Si la marca, se reemplaza por la del PDF</small>` : ''}</td>
             <td><details><summary>${resumenAlertas(b._alertas)}</summary>${listaAlertas(b._alertas)}</details></td></tr>`; }).join('')).join('')}
       </table></div>
       <p class="muted" style="font-size:12px">Quedan sin marcar las filas con ⛔ errores (revíselas en el PDF original) y las de pacientes que ya tienen bitácora ese mes (para no pisar lo que se hizo a mano). Los avisos no impiden importar; después puede corregir cada bitácora en "✏️ Editar documento".</p>
@@ -502,7 +514,7 @@ function exportarLote(periodo) {
   const info = () => {
     const l = sel(), al = l.map(b => validarBitacora(b));
     const err = al.filter(a => a.some(x => x.nivel === 'error')).length, sinFirma = l.filter(b => b.modoFirma === 'digital' && !anexosCompletos(cliente(b.clienteId))).length;
-    $('#xinfo', md).innerHTML = `<div class="chips"><span class="chip"><b>${l.length}</b> bitácoras</span><span class="chip"><b>${l.reduce((s, b) => s + fechasDe(b).length, 0)}</b> servicios</span>
+    $('#xinfo', md).innerHTML = `<div class="chips"><span class="chip"><b>${l.length}</b> bitácoras</span><span class="chip"><b>${l.reduce((s, b) => s + nServicios(b), 0)}</b> servicios</span>
       ${err ? `<span class="chip">⛔ <b>${err}</b> con errores</span>` : ''}${sinFirma ? `<span class="chip">⚠️ <b>${sinFirma}</b> sin firma o # ID</span>` : ''}</div>
       ${sinFirma ? '<p class="muted" style="font-size:12px;margin:6px 0 0">Las que no tienen firma o # ID salen con esas columnas vacías.</p>' : ''}`;
   };
@@ -525,7 +537,7 @@ function exportarLote(periodo) {
         usados.add(n.toLowerCase());
         zip.file(n + '.pdf', await pdfBitacora(b));
         const c = cliente(b.clienteId), al = validarBitacora(b);
-        csv.push([n + '.pdf', c?.paciente, c?.docPaciente, codigoDe(b), b.plan || '', fechasDe(b).filter(f => !(b.excluidas || []).includes(f + '|ida')).length, ipsCanon(c?.ips),
+        csv.push([n + '.pdf', c?.paciente, c?.docPaciente, codigoDe(b), b.plan || '', filas(b).filter(r => r.tramo === 'ida' && !r.excl).length, ipsCanon(c?.ips),
           c?.firma ? 'sí' : 'no', c?.firmaId ? 'sí' : 'no', al.filter(a => a.nivel !== 'info').map(a => a.texto).join(' | ')].map(celda).join(';'));
       }
       zip.file(`RESUMEN ${periodoTxt(l[0].periodo).toUpperCase()}.csv`, '﻿' + csv.join('\r\n'));

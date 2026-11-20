@@ -123,7 +123,7 @@ const nfmt = n => n.toLocaleString('es-CO');
 function datosMes(m) {
   const h = hoy(); let real = 0, prog = 0; const pac = new Set();
   for (const b of DB.bitacoras.filter(b => b.periodo === m)) {
-    const fs = fechasDe(b); if (fs.length) pac.add(b.clienteId);
+    const fs = rutasUsadas(b).flatMap(r => fechasRuta(b, r)); if (fs.length) pac.add(b.clienteId); // un servicio por ruta y día
     for (const f of fs) f <= h ? real++ : prog++;
   }
   return { m, real, prog, total: real + prog, pac: pac.size };
@@ -242,7 +242,7 @@ function viewDashboard(param = '') {
   const agendadas = DB.bitacoras.filter(b => b.agendaFirma && b.estado !== 'firmado' && b.agendaFirma >= hoy()).sort((a, b) => a.agendaFirma.localeCompare(b.agendaFirma));
 
   // Distribución del mes
-  const sumar = clave => { const r = {}; delMes.forEach(x => { const k = clave(x); r[k] = (r[k] || 0) + fechasDe(x.b).length; }); return Object.entries(r).map(([k, n]) => ({ k, n })).sort((a, b) => b.n - a.n); };
+  const sumar = clave => { const r = {}; delMes.forEach(x => { const k = clave(x); r[k] = (r[k] || 0) + nServicios(x.b); }); return Object.entries(r).map(([k, n]) => ({ k, n })).sort((a, b) => b.n - a.n); };
   const porCodigo = sumar(x => codigoDe(x.b, x.c) || 'Sin código').map(({ k, n }) => ({ etiqueta: k, titulo: descCodigo(k) || k, n, accion: `irBitacoras(${esc(JSON.stringify({ m: mes, cod: k }))})` }));
   const porIps = sumar(x => ipsCanon(x.c?.ips)).map(({ k, n }) => ({ etiqueta: k, n, accion: `irBitacoras(${esc(JSON.stringify({ m: mes, ips: k }))})` }));
 
@@ -323,7 +323,7 @@ function tablaBitacoras(list, acciones = false) {
   return `<table class="list"><tr><th>Paciente</th><th>Periodo</th><th>Servicios</th><th>Firma</th><th>Estado</th>${acciones ? '<th></th>' : ''}</tr>
     ${list.map(b => { const c = cliente(b.clienteId); const e = estadoFirma(b); return `
       <tr class="click" onclick="location.hash='#/bitacora/${b.id}'"><td><b>${esc(c?.paciente || '(cliente eliminado)')}</b><br><small class="muted">${esc(c?.docPaciente || '')}</small></td>
-      <td>${periodoTxt(b.periodo)}</td><td>${fechasDe(b).length} servicios</td><td>${modoBadge(b)}</td>
+      <td>${periodoTxt(b.periodo)}</td><td>${nServicios(b)} servicios</td><td>${modoBadge(b)}</td>
       <td><span class="badge ${e.cls}">${e.txt}</span></td>
       ${acciones ? `<td style="text-align:right" onclick="event.stopPropagation()">
         <a class="btn sm" href="#/bitacora/${b.id}">✏️ Editar</a>
@@ -379,7 +379,7 @@ const ib = (n, etiqueta, accion, extra = '') => accion.startsWith('#')
 
 // Filtros y página de cada lista (se conservan al refrescar en tiempo real)
 const FILTRO = { clientes: { q: '', cod: '', ips: '', anexos: '', p: 1 }, bitacoras: { q: '', m: '', cod: '', plan: '', est: '', al: '', tipo: '', ips: '', p: 1 } };
-const codigosCliente = c => [...new Set([c.codigo, ...DB.bitacoras.filter(b => b.clienteId === c.id).map(b => codigoDe(b, c))].filter(Boolean))];
+const codigosCliente = c => [...new Set([c.codigo, ...(c.rutas || []).map(r => r.codigo), ...DB.bitacoras.filter(b => b.clienteId === c.id).map(b => codigoDe(b, c))].filter(Boolean))];
 function viewClientes() {
   const F = FILTRO.clientes, q = sinTildes(F.q);
   const todos = [...DB.clientes].sort((a, b) => a.paciente.localeCompare(b.paciente));
@@ -410,7 +410,7 @@ function viewClientes() {
       ${pg.items.map(c => `<tr>
         <td><b>${esc(c.paciente)}</b><br><small class="muted">CC ${esc(c.docPaciente)}</small></td>
         <td>${nombreFirmante(c) ? esc(nombreFirmante(c)) : '<span class="muted">Sin firmante registrado</span>'}<br><small class="muted">${!nombreFirmante(c) ? '' : esPaciente(c) ? 'Paciente' : 'Acudiente'}${docFirmante(c) ? ' · CC ' + esc(docFirmante(c)) : ''}</small></td>
-        <td><small><b>${esc(ipsCanon(c.ips))}</b><br>${esc(c.origen)}<br>${hora12(c.horaIda)} / ${hora12(c.horaRegreso)}</small></td>
+        <td><small><b>${esc(ipsCanon(c.ips))}</b><br>${esc(c.origen)}<br>${hora12(c.horaIda)} / ${hora12(c.horaRegreso)}</small>${(c.rutas || []).length ? `<br><span class="badge b-dig" title="${esc(c.rutas.map((r, i) => nombreRuta(r, i + 1) + ': ' + ipsCanon(r.ips)).join(' · '))}">+${c.rutas.length} ruta${c.rutas.length === 1 ? '' : 's'}</span>` : ''}</td>
         <td>${codigosCliente(c).map(k => `<span class="badge b-mute" title="${esc(descCodigo(k))}">${esc(k)}</span>`).join(' ') || '—'}</td>
         <td>${miniAnexos(c)}<br><small>${[c.firma?.original && `<a href="${c.firma.original}" target="_blank">anexo firma</a>`, c.firmaId?.original && `<a href="${c.firmaId.original}" target="_blank">anexo # ID</a>`].filter(Boolean).join(' · ')}</small></td>
         <td class="acciones"><div class="acc">
@@ -449,13 +449,17 @@ function formCliente(id, prefill = {}, onSaved) {
         </div>
         <div class="form" id="acuFields">
           ${f('acudiente', 'Nombre del acudiente')}${f('docAcudiente', '# ID acudiente', 'inputmode="numeric"')}${f('telefono', 'Teléfono de contacto', 'inputmode="tel"')}</div></fieldset>
-      <fieldset><legend>Ruta fija</legend><div class="form">
+      <fieldset><legend>Ruta principal</legend><div class="form">
         ${f('origen', 'Dirección de recogida (ida)', 'required')}${f('ips', 'IPS destino', 'required list="ipsSug"')}
         <datalist id="ipsSug">${[...new Set(DB.clientes.map(x => x.ips).filter(Boolean))].sort().map(x => `<option value="${esc(x)}">`).join('')}</datalist>
         ${f('regreso', 'Punto de regreso', 'required')}
         <label>Código de tecnología (por defecto)<select name="codigo">
           ${codigos().map(k => `<option value="${esc(k.codigo)}" ${k.codigo === (c.codigo || DB.config.codigo) ? 'selected' : ''}>${esc(k.codigo)} · ${esc(k.descripcion.slice(0, 60))}</option>`).join('')}</select></label>
         ${f('horaIda', 'Hora ida', 'type="time" required')}${f('horaRegreso', 'Hora regreso', 'type="time" required')}</div></fieldset>
+      <fieldset><legend>Otras rutas <small class="muted">(opcional)</small></legend>
+        <p class="muted" style="margin:0 0 10px">Si el paciente a veces va a otra IPS u otro horario, agréguela aquí. Al hacer la bitácora se eligen los días de cada ruta.</p>
+        <div id="rutasExtra"></div>
+        <button type="button" class="btn sm" id="addRuta">+ Agregar otra ruta</button></fieldset>
       <fieldset><legend>Firma</legend>
         <p class="muted" style="margin:0 0 10px">Adjunte la foto o escaneo de la firma: se le quita el fondo automáticamente y se guarda junto con el anexo original.</p>
         <div id="fw"></div></fieldset>
@@ -473,10 +477,24 @@ function formCliente(id, prefill = {}, onSaved) {
   const toggleAcu = () => { const pac = $('input[name=firmante]:checked', m).value === 'paciente'; $$('#acuFields input[name=acudiente], #acuFields input[name=docAcudiente]', m).forEach(i => i.closest('label').hidden = pac); };
   $$('input[name=firmante]', m).forEach(r => r.onchange = toggleAcu); toggleAcu();
 
+  // Rutas adicionales: tarjetas editables (sus campos no tienen "name": se recogen aparte)
+  const cajaRutas = $('#rutasExtra', m);
+  (c.rutas || []).forEach(r => cajaRutas.insertAdjacentHTML('beforeend', formRuta(r, cajaRutas.children.length + 1)));
+  $('#addRuta', m).onclick = () => {
+    cajaRutas.insertAdjacentHTML('beforeend', formRuta({ horaIda: $('input[name=horaIda]', m).value, horaRegreso: $('input[name=horaRegreso]', m).value, origen: $('input[name=origen]', m).value, regreso: $('input[name=regreso]', m).value }, cajaRutas.children.length + 1));
+    $('.ruta-form:last-child [data-k=nombre]', cajaRutas).focus();
+  };
+  cajaRutas.onclick = e => {
+    const q = e.target.closest('[data-quitar-ruta]');
+    if (q && confirm('¿Quitar esta ruta? Las bitácoras que la usan dejarán de mostrar esos días.')) { q.closest('.ruta-form').outerHTML = ''; renumerarRutas(cajaRutas); }
+  };
+
   const claveForm = nuevaClave(); // una por apertura del formulario: reenviar = misma operación
   $('#fc', m).onsubmit = async e => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(e.target));
+    const rutas = leerRutas(cajaRutas); if (rutas.error) return toast(rutas.error);
+    data.rutas = rutas;
     ['paciente', 'acudiente', 'origen', 'ips', 'regreso'].forEach(k => data[k] = (data[k] || '').trim().toUpperCase());
     ['docPaciente', 'docAcudiente'].forEach(k => data[k] = (data[k] || '').replace(/\D/g, ''));
     const firma = w.valor(), fid = wid.valor();
@@ -506,6 +524,37 @@ function formCliente(id, prefill = {}, onSaved) {
     if (!confirm('¿Eliminar cliente, su firma y sus bitácoras?')) return;
     await api('DELETE', 'clientes/' + id); closeModal(); toast('Cliente eliminado'); router();
   };
+}
+
+// Tarjeta editable de una ruta adicional (también se usa al agregar una ruta desde la bitácora)
+function formRuta(r = {}, n = 1) {
+  const v = k => esc(r[k] || ''), cod = r.codigo || '';
+  return `<div class="ruta-form" data-id="${esc(r.id || '')}">
+    <div class="ruta-form-head"><b class="ruta-n">Ruta ${n + 1}</b><button type="button" class="btn sm danger" data-quitar-ruta>✕ Quitar</button></div>
+    <div class="form">
+      <label class="full">Nombre corto <small class="muted">(ej. Control Misericordia)</small><input data-k="nombre" value="${v('nombre')}" maxlength="60"></label>
+      <label>Dirección de recogida (ida)<input data-k="origen" value="${v('origen')}"></label>
+      <label>IPS destino<input data-k="ips" value="${v('ips')}" list="ipsSug"></label>
+      <label>Punto de regreso<input data-k="regreso" value="${v('regreso')}"></label>
+      <label>Código <small class="muted">(vacío = el de la bitácora)</small><select data-k="codigo"><option value="">El de la bitácora</option>
+        ${codigos().map(k => `<option value="${esc(k.codigo)}" ${k.codigo === cod ? 'selected' : ''}>${esc(k.codigo)} · ${esc(k.descripcion.slice(0, 50))}</option>`).join('')}</select></label>
+      <label>Hora ida<input type="time" data-k="horaIda" value="${v('horaIda')}"></label>
+      <label>Hora regreso<input type="time" data-k="horaRegreso" value="${v('horaRegreso')}"></label>
+    </div></div>`;
+}
+const renumerarRutas = caja => $$('.ruta-n', caja).forEach((x, i) => x.textContent = `Ruta ${i + 2}`);
+function leerRutas(caja) {
+  const out = [];
+  for (const [i, el] of $$('.ruta-form', caja).entries()) {
+    const r = el.dataset.id ? { id: el.dataset.id } : {};
+    $$('[data-k]', el).forEach(x => r[x.dataset.k] = x.value.trim());
+    ['origen', 'ips', 'regreso'].forEach(k => r[k] = r[k].toUpperCase());
+    if (!r.regreso) r.regreso = r.origen;
+    if (!r.origen || !r.ips) return { error: `Ruta ${i + 2}: falta la dirección de recogida o la IPS destino` };
+    if (!r.horaIda || !r.horaRegreso) return { error: `Ruta ${i + 2}: faltan las horas de ida y regreso` };
+    out.push(r);
+  }
+  return out;
 }
 
 async function eliminarCliente(id) {
@@ -571,7 +620,7 @@ function resumenMes(mes = mesPorDefecto()) {
     <table class="list"><tr><th>Paciente</th><th>Servicios</th><th>Firma · # ID</th><th>Estado</th><th></th></tr>
     ${bits.map(b => { const c = cliente(b.clienteId), e = estadoFirma(b); return `<tr>
       <td><b>${esc(c?.paciente)}</b><br><small class="muted">CC ${esc(c?.docPaciente)} · firma ${esc(nombreFirmante(c) || '—')}</small></td>
-      <td>${fechasDe(b).length} servicios · ${fechasDe(b).length * 2} filas</td>
+      <td>${nServicios(b)} servicios · ${nServicios(b) * 2} filas</td>
       <td>${miniAnexos(c)}</td>
       <td><span class="badge ${e.cls}">${e.txt}</span></td>
       <td style="text-align:right"><a class="btn sm" href="#/registros?m=${mes}&c=${c.id}">Ver registros</a></td></tr>`; }).join('')}</table></div>`;
@@ -592,27 +641,31 @@ function viewRegistros(qs = '') {
   const porPac = {};
   bits.forEach(b => (porPac[b.clienteId] ||= []).push(b));
   const pgReg = paginar(Object.entries(porPac).sort((x, y) => (cliente(x[0])?.paciente || '').localeCompare(cliente(y[0])?.paciente || '')), p.get('p') || 1, 10);
-  const servicios = bits.reduce((s, b) => s + b.fechas.length, 0);
-  const conFirma = bits.filter(b => b.modoFirma === 'digital' && anexosCompletos(cliente(b.clienteId))).reduce((s, b) => s + b.fechas.length, 0);
+  const servicios = bits.reduce((s, b) => s + nServicios(b), 0);
+  const conFirma = bits.filter(b => b.modoFirma === 'digital' && anexosCompletos(cliente(b.clienteId))).reduce((s, b) => s + nServicios(b), 0);
 
   const filasPac = (c, lista) => {
     let html = '';
     for (const b of lista.sort((x, y) => y.periodo.localeCompare(x.periodo))) {
       const firma = b.modoFirma === 'digital' && c.firma;
-      if (mes === 'todos') html += `<tr class="mes-sep"><td colspan="6">${periodoTxt(b.periodo)} · ${b.fechas.length} servicios · <a href="#/bitacora/${b.id}">abrir bitácora</a></td></tr>`;
+      if (mes === 'todos') html += `<tr class="mes-sep"><td colspan="6">${periodoTxt(b.periodo)} · ${nServicios(b)} servicios · <a href="#/bitacora/${b.id}">abrir bitácora</a></td></tr>`;
       const rows = filas(b);
-      for (const f of fechasDe(b)) {
+      // un renglón por día y ruta (un día puede tener dos rutas)
+      const servicios = [...new Map(rows.map(r => [r.fecha + '|' + r.ruta, { f: r.fecha, ruta: r.ruta }])).values()];
+      const variasRutas = new Set(servicios.map(s => s.ruta)).size > 1;
+      for (const { f, ruta } of servicios) {
         const dia = DIAS[new Date(f + 'T12:00').getDay()];
-        const ida = rows.find(r => r.key === `${f}|ida` && !r.excl), reg = rows.find(r => r.key === `${f}|reg` && !r.excl);
+        const ida = rows.find(r => r.fecha === f && r.ruta === ruta && r.tramo === 'ida' && !r.excl), reg = rows.find(r => r.fecha === f && r.ruta === ruta && r.tramo === 'reg' && !r.excl);
         const tramo = (r, t) => r ? `${t} ${esc(r.hora)}<div class="ruta">${esc(r.dir)} → ${esc(r.ips)}</div>` : `<span class="muted">${t}: sin servicio</span>`;
+        const rr = variasRutas ? rutasDe(c).findIndex(x => x.id === ruta) : -1;
         html += `<tr>
-          <td><b>${fechaDoc(f)}</b> <small class="muted">${dia}</small></td>
+          <td><b>${fechaDoc(f)}</b> <small class="muted">${dia}</small>${rr >= 0 ? `<br><span class="ruta-chip r${rr % 6}">${esc(nombreRuta(rutasDe(c)[rr], rr))}</span>` : ''}</td>
           <td>${tramo(ida, 'Ida')}</td>
           <td>${tramo(reg, 'Regreso')}</td>
           <td>${firma ? `<img class="mini" src="${firmaSrc(c)}" alt="firma">` : `<span class="badge ${b.modoFirma === 'escrita' ? 'b-esc' : 'b-warn'}">${b.modoFirma === 'escrita' ? 'A mano' : 'Sin firma'}</span>`}</td>
           <td>${b.modoFirma !== 'digital' ? '' : c.firmaId ? `<img class="mini" src="${idSrc(c)}" alt="# ID">` : `<span class="badge b-warn">Sin # ID</span>`}</td>
           <td style="text-align:right"><a class="btn sm" href="#/bitacora/${b.id}" title="Editar en la bitácora">✏️</a>
-            <button class="btn sm danger" onclick="quitarFecha('${b.id}', '${f}')" title="Quitar esta fecha">🗑</button></td></tr>`;
+            <button class="btn sm danger" onclick="quitarFecha('${b.id}', '${f}', '${ruta}')" title="Quitar este servicio">🗑</button></td></tr>`;
       }
     }
     return html;
@@ -635,7 +688,7 @@ function viewRegistros(qs = '') {
       <span class="chip"><b>${conFirma}</b> con firma e ID anexados</span>
       ${pgReg.total > 1 ? `<span class="chips-acc"><button class="btn sm" id="expTodos">▾ Expandir todos</button><button class="btn sm" id="conTodos">▸ Contraer todos</button></span>` : ''}
     </div>
-    ${pgReg.total ? pgReg.items.map(([id, lista]) => { const c = cliente(id); const n = lista.reduce((s, b) => s + b.fechas.length, 0);
+    ${pgReg.total ? pgReg.items.map(([id, lista]) => { const c = cliente(id); const n = lista.reduce((s, b) => s + nServicios(b), 0);
       const abierto = REG_ABIERTOS[id] ?? (!!cid || pgReg.total === 1); // un solo paciente: abierto de entrada
       const fs = lista.flatMap(b => fechasDe(b)).sort(), rango = fs.length > 1 ? `${fechaDoc(fs[0])} – ${fechaDoc(fs[fs.length - 1])}` : fs.length ? fechaDoc(fs[0]) : '';
       const cods = [...new Set(lista.map(b => codigoDe(b, c)))].join(', ');
@@ -676,15 +729,18 @@ function viewRegistros(qs = '') {
   if (p.has('q')) { const f = $('#fq'); f.focus(); f.setSelectionRange(f.value.length, f.value.length); }
 }
 
-async function quitarFecha(bid, f) {
+async function quitarFecha(bid, f, ruta = RUTA_P) {
   const b = DB.bitacoras.find(x => x.id === bid);
   if (!confirm(`¿Quitar el servicio del ${fechaDoc(f)} (ida y regreso)?`)) return;
-  const fechas = b.fechas.filter(x => x !== f);
-  if (!fechas.length && !confirm('Era la única fecha: la bitácora quedará vacía. ¿Eliminar también la bitácora?') ) return;
-  if (!fechas.length) { await api('DELETE', 'bitacoras/' + bid); toast('Bitácora eliminada'); return router(); }
-  const ajustes = Object.fromEntries(Object.entries(b.ajustes || {}).filter(([k]) => !k.startsWith(f)));
-  const excluidas = (b.excluidas || []).filter(k => !k.startsWith(f));
-  await api('PUT', 'bitacoras/' + bid, { fechas, ajustes, excluidas }); toast('Fecha quitada'); router();
+  const fechas = ruta === RUTA_P ? b.fechas.filter(x => x !== f) : b.fechas;
+  const rutasExtra = { ...(b.rutasExtra || {}) };
+  if (ruta !== RUTA_P) rutasExtra[ruta] = (rutasExtra[ruta] || []).filter(x => x !== f);
+  if (!nServicios({ ...b, fechas, rutasExtra }) && !confirm('Era el único servicio: la bitácora quedará vacía. ¿Eliminar también la bitácora?')) return;
+  if (!nServicios({ ...b, fechas, rutasExtra })) { await api('DELETE', 'bitacoras/' + bid); toast('Bitácora eliminada'); return router(); }
+  const pre = ruta === RUTA_P ? `${f}|` : `${f}|${ruta}|`, deEste = k => k.startsWith(pre) && (ruta !== RUTA_P || /\|(ida|reg)$/.test(k) && k.split('|').length === 2);
+  const ajustes = Object.fromEntries(Object.entries(b.ajustes || {}).filter(([k]) => !deEste(k)));
+  const excluidas = (b.excluidas || []).filter(k => !deEste(k));
+  await api('PUT', 'bitacoras/' + bid, { fechas, rutasExtra, ajustes, excluidas }); toast('Servicio quitado'); router();
 }
 function agregarFecha(cid, mes) {
   const c = cliente(cid);
@@ -725,7 +781,7 @@ function viewBitacoras(param = '') {
   NAV.bitacoras = lista.map(x => x.b.id); // orden para "‹ Anterior / Siguiente ›" dentro de cada bitácora
   const codsUsados = [...new Set(conAl.map(({ b, c }) => codigoDe(b, c)).filter(Boolean))].sort();
   const opt = (v, sel, txt = v) => `<option value="${esc(v)}" ${v === sel ? 'selected' : ''}>${esc(txt)}</option>`;
-  const resumenMes = per => { const l = conAl.filter(x => x.b.periodo === per); return `${l.length} bitácoras · ${l.reduce((s, x) => s + fechasDe(x.b).length, 0)} servicios · ⛔ ${l.filter(x => x.al.some(a => a.nivel === 'error')).length} · ⚠️ ${l.filter(x => x.al.some(a => a.nivel === 'aviso')).length}`; };
+  const resumenMes = per => { const l = conAl.filter(x => x.b.periodo === per); return `${l.length} bitácoras · ${l.reduce((s, x) => s + nServicios(x.b), 0)} servicios · ⛔ ${l.filter(x => x.al.some(a => a.nivel === 'error')).length} · ⚠️ ${l.filter(x => x.al.some(a => a.nivel === 'aviso')).length}`; };
   let mesAnt = '';
   const filasHtml = pg.items.map(({ b, c, al }) => {
     const e = estadoFirma(b), sep = b.periodo !== mesAnt ? (mesAnt = b.periodo, `<tr class="grupo"><td colspan="7"><div class="grupo-in"><b>${periodoTxt(b.periodo)}</b><small class="muted">${resumenMes(b.periodo)}</small>
@@ -733,7 +789,7 @@ function viewBitacoras(param = '') {
     return sep + `<tr class="click" onclick="location.hash='#/bitacora/${b.id}'">
       <td><b>${esc(c?.paciente || '(cliente eliminado)')}</b><br><small class="muted">${esc(c?.docPaciente || '')} · ${esc(ipsCanon(c?.ips))}</small></td>
       <td>${codBadge(b)} ${planBadge(b.plan)}</td>
-      <td>${fechasDe(b).length}</td><td>${modoBadge(b)}</td>
+      <td>${nServicios(b)}</td><td>${modoBadge(b)}</td>
       <td><span class="badge ${e.cls}">${e.txt}</span></td>
       <td onclick="event.stopPropagation()"><details class="al-det"><summary>${resumenAlertas(al)}</summary>${listaAlertas(al)}</details></td>
       <td class="acciones" onclick="event.stopPropagation()"><div class="acc"><div class="acc-grupo" role="group" aria-label="Acciones">
@@ -777,7 +833,13 @@ function viewBitacora(param = '') {
   const b = nueva ? { clienteId: pre && cliente(pre) ? pre : '', periodo: mes, fechas: [], modoFirma: 'digital', agendaFirma: '', estado: 'pendiente', plan: '' }
     : structuredClone(DB.bitacoras.find(x => x.id === id) || null);
   if (!b) { app.innerHTML = '<div class="card empty">Bitácora no encontrada</div>'; return; }
-  b.ajustes ||= {}; b.excluidas ||= [];
+  b.ajustes ||= {}; b.excluidas ||= []; b.rutasExtra = { ...(b.rutasExtra || {}) };
+  // Ruta cuyos días se marcan en el calendario (la principal, o la que venga en ?r= al crear "otra bitácora" para una ruta)
+  const rParam = new URLSearchParams(qs || '').get('r');
+  let rutaActiva = rParam && rutaDe(cliente(b.clienteId), rParam) ? rParam : RUTA_P;
+  if (nueva && rutaActiva !== RUTA_P) { const rr = rutaDe(cliente(b.clienteId), rutaActiva); if (rr.codigo) b.codigo = rr.codigo; }
+  const diasRuta = rid => rid === RUTA_P ? b.fechas : (b.rutasExtra[rid] || []);
+  const ponerDias = (rid, fs) => { fs = [...new Set(fs)].sort(); if (rid === RUTA_P) b.fechas = fs; else if (fs.length) b.rutasExtra[rid] = fs; else delete b.rutasExtra[rid]; };
   let editando = false, sucio = false;
   const claveBit = nuevaClave(); // crear esta bitácora dos veces (doble clic / reintento) = una sola
   window.__bitOcupado = () => sucio || editando;
@@ -811,7 +873,8 @@ function viewBitacora(param = '') {
             <label>Agendar firma para <small class="muted">(opcional)</small><input type="date" id="ag" value="${b.agendaFirma || ''}"></label>
             <div class="full" id="firmaInfo"></div></div>`)}
         </div>
-        ${paso(3, 'Marque los días del servicio', 'Toque cada día en que se hizo el viaje: cada día genera la fila de ida y la de regreso. <b>Lun–Vie</b> marca los días hábiles (sin festivos). Los festivos salen en rojo.', `
+        ${paso(3, 'Marque los días del servicio', 'Toque cada día en que se hizo el viaje: cada día genera la fila de ida y la de regreso. <b>Lun–Vie</b> marca los días hábiles (sin festivos). Los festivos salen en rojo. Si ese mes el paciente tuvo <b>otra ruta</b> (otra IPS u otro horario), elíjala o agréguela aquí.', `
+          <div id="rutasBar" class="rutas-bar"></div>
           <div class="row cal-acc"><span id="nf" class="badge b-dig"></span>
             <span class="row"><button class="btn sm" id="hab" title="Marcar lunes a viernes del mes (sin festivos)">Lun–Vie</button><button class="btn sm" id="none" title="Desmarcar todo el mes">Limpiar</button></span></div>
           <div class="cal-nav">
@@ -854,7 +917,7 @@ function viewBitacora(param = '') {
     if (c && !buscandoPac) {
       cont.innerHTML = `<div class="pac-elegido">
         <div><b>${esc(c.paciente)}</b> <small class="muted">CC ${esc(c.docPaciente)}</small><br>
-          <small>${esc(ipsCanon(c.ips))} · ${esc(c.origen)} · ${hora12(c.horaIda)} / ${hora12(c.horaRegreso)}</small><br>
+          <small>${esc(ipsCanon(c.ips))} · ${esc(c.origen)} · ${hora12(c.horaIda)} / ${hora12(c.horaRegreso)}</small>${(c.rutas || []).length ? ` <span class="badge b-dig">+${c.rutas.length} ruta${c.rutas.length === 1 ? '' : 's'}</span>` : ''}<br>
           <small class="muted">Firma: ${esc(nombreFirmante(c) || 'sin definir')}${docFirmante(c) ? ' · CC ' + esc(docFirmante(c)) : ''}</small></div>
         <div class="row"><button type="button" class="btn sm" id="editPac">✏️ Editar datos</button><button type="button" class="btn sm" id="cambiarPac">Cambiar paciente</button></div></div>`;
       $('#cambiarPac').onclick = () => { buscandoPac = true; pintarPaciente(); $('#buscaPac')?.focus(); };
@@ -884,7 +947,7 @@ function viewBitacora(param = '') {
   };
   // Marca cada paso como listo (✓) o bloqueado mientras no hay paciente
   const marcarPasos = c => {
-    const listo = { 1: !!c, 2: !!(c && b.periodo && b.codigo), 3: fechasDe(b).length > 0,
+    const listo = { 1: !!c, 2: !!(c && b.periodo && b.codigo), 3: nServicios(b) > 0,
       4: !!c && (b.modoFirma === 'escrita' || anexosCompletos(c)), 5: !!b.id && !sucio };
     for (const n of [1, 2, 3, 4, 5]) { const s = $('#paso' + n); s.classList.toggle('listo', listo[n]); s.classList.toggle('bloq', n > 1 && !c); s.inert = n > 1 && !c; }
   };
@@ -896,6 +959,7 @@ function viewBitacora(param = '') {
     b.agendaFirma = $('#ag').value; b.estado = $('#est').value;
     b.fechas = [...new Set(b.fechas)].sort(); // se conservan también las de otros meses mientras navega
     const c = cliente(b.clienteId);
+    if (!rutaDe(c, rutaActiva)) rutaActiva = RUTA_P; // cambió de paciente o se quitó la ruta
     pintarPaciente(); marcarPasos(c);
     $('#archivoLinea').hidden = !c;
     if (!c) { // sin paciente: nada que previsualizar todavía
@@ -918,16 +982,65 @@ function viewBitacora(param = '') {
   };
   window.__syncBit = sync;
 
+  // Barra de rutas: la ruta activa es la que se marca en el calendario; "+ Otra ruta" pregunta si va en esta bitácora o en otra
+  const renderRutas = () => {
+    const c = cliente(b.clienteId), bar = $('#rutasBar');
+    if (!c) { bar.innerHTML = ''; return; }
+    const rs = rutasDe(c);
+    bar.innerHTML = `${rs.length > 1 ? '<span class="rutas-lbl">Ruta que está marcando:</span>' : ''}
+      ${rs.length > 1 ? rs.map((r, i) => { const n = fechasRuta(b, r.id).length;
+        return `<button type="button" class="ruta-opc r${i % 6} ${r.id === rutaActiva ? 'activa' : ''}" data-ruta="${r.id}" aria-pressed="${r.id === rutaActiva}">
+          <i class="ruta-dot" aria-hidden="true"></i><span><b>${esc(nombreRuta(r, i))}</b><small>${esc(ipsCanon(r.ips) === 'Otra IPS' ? r.ips : ipsCanon(r.ips))} ·${hora12(r.horaIda)}–${hora12(r.horaRegreso)}${r.codigo ? ' · ' + esc(r.codigo) : ''}</small></span>
+          <em>${n} día${n === 1 ? '' : 's'}</em></button>`; }).join('') : ''}
+      <button type="button" class="btn sm ruta-add" id="otraRuta">+ Agregar otra ruta</button>`;
+    $$('.ruta-opc', bar).forEach(x => x.onclick = () => { rutaActiva = x.dataset.ruta; renderCal(); });
+    $('#otraRuta').onclick = agregarRuta;
+  };
+  const agregarRuta = () => {
+    const c = cliente(b.clienteId); if (!c) return;
+    const md = modal(`<h2 style="margin-top:0">Agregar otra ruta</h2>
+      <p class="sub">${esc(c.paciente)} · la ruta queda guardada en el paciente para los próximos meses.</p>
+      <div id="nr">${formRuta({ origen: c.origen, regreso: c.regreso, horaIda: c.horaIda, horaRegreso: c.horaRegreso }, (c.rutas || []).length + 1)}</div>
+      <datalist id="ipsSug">${[...new Set(DB.clientes.map(x => x.ips).filter(Boolean))].sort().map(x => `<option value="${esc(x)}">`).join('')}</datalist>
+      <fieldset style="margin-top:12px"><legend>¿Dónde van los servicios de esta ruta?</legend>
+        <div class="radios">
+          <label><input type="radio" name="dondeR" value="misma" checked> En esta misma bitácora</label>
+          <label><input type="radio" name="dondeR" value="otra"> En otra bitácora aparte</label></div>
+        <small class="muted">Use "otra bitácora" si esa ruta se factura por separado (por ejemplo, otro código o municipio).</small></fieldset>
+      <div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn" onclick="closeModal()">Cancelar</button><button class="btn primary" id="okR">Agregar ruta</button></div>`, true);
+    $('[data-quitar-ruta]', md).hidden = true;
+    const clave = nuevaClave();
+    $('#okR', md).onclick = async () => {
+      const nuevas = leerRutas($('#nr', md)); if (nuevas.error) return toast(nuevas.error.replace(/^Ruta \d+: /, ''));
+      const donde = $('input[name=dondeR]:checked', md).value, antes = new Set((c.rutas || []).map(r => r.id));
+      const btn = $('#okR', md); btn.disabled = true;
+      try { await api('PUT', 'clientes/' + c.id, { rutas: [...(c.rutas || []), nuevas[0]] }, { clave }); }
+      catch (err) { btn.disabled = false; return toast('⚠️ ' + err.message); }
+      closeModal(); await reload();
+      const nueva_ = (cliente(c.id).rutas || []).find(r => !antes.has(r.id));
+      if (!nueva_) return toast('No se pudo agregar la ruta');
+      if (donde === 'misma') { rutaActiva = nueva_.id; toast('Ruta agregada: marque sus días en el calendario'); sync(); return; }
+      if (sucio && nServicios(b) && confirm('Antes de abrir la otra bitácora, ¿guardar los cambios de esta?') && !(await guardar())) return;
+      sucio = false; editando = false;
+      location.hash = `#/bitacora/nueva?c=${c.id}&m=${b.periodo}&r=${nueva_.id}`;
+    };
+  };
   const renderCal = () => {
+    renderRutas();
     const [y, m] = b.periodo.split('-').map(Number), n = new Date(y, m, 0).getDate(), off = (new Date(y, m - 1, 1).getDay() + 6) % 7;
-    const delMes = fechasDe(b), hoyIso = hoy();
+    const hoyIso = hoy(), c = cliente(b.clienteId), rs = rutasDe(c), activos = diasRuta(rutaActiva);
+    const ns = nServicios(b);
     $('#mesLbl').textContent = periodoTxt(b.periodo);
-    $('#nf').textContent = `${delMes.length} días · ${delMes.length * 2} filas`;
+    $('#nf').textContent = rs.length > 1 ? `${ns} servicio${ns === 1 ? '' : 's'} · ${ns * 2} filas · esta ruta: ${fechasRuta(b, rutaActiva).length}` : `${ns} días · ${ns * 2} filas`;
+    $('#cal').classList.toggle('multi', rs.length > 1);
+    $('#cal').dataset.r = String(Math.max(0, rs.findIndex(r => r.id === rutaActiva)) % 6);
     $('#cal').innerHTML = ['L', 'M', 'X', 'J', 'V', 'S', 'D'].map(d => `<div class="dow">${d}</div>`).join('') + '<div></div>'.repeat(off) +
       Array.from({ length: n }, (_, i) => { const iso = `${b.periodo}-${String(i + 1).padStart(2, '0')}`, wd = (off + i) % 7;
-        const fe = festivo(iso);
-        return `<button data-d="${iso}" class="${b.fechas.includes(iso) ? 'on' : ''} ${wd > 4 ? 'we' : ''} ${fe ? 'fest' : ''} ${iso === hoyIso ? 'hoy' : ''}" title="${fe ? 'Festivo: ' + fe : iso === hoyIso ? 'Hoy' : ''}" aria-pressed="${b.fechas.includes(iso)}">${i + 1}</button>`; }).join('');
-    const otros = b.fechas.filter(f => !f.startsWith(b.periodo));
+        const fe = festivo(iso), on = activos.includes(iso);
+        // puntos de color: otras rutas que también tienen servicio ese día
+        const puntos = rs.length > 1 ? rs.map((r, k) => r.id !== rutaActiva && diasRuta(r.id).includes(iso) ? `<i class="cal-dot r${k % 6}"></i>` : '').join('') : '';
+        return `<button data-d="${iso}" class="${on ? 'on' : ''} ${wd > 4 ? 'we' : ''} ${fe ? 'fest' : ''} ${iso === hoyIso ? 'hoy' : ''}" title="${fe ? 'Festivo: ' + fe : iso === hoyIso ? 'Hoy' : ''}" aria-pressed="${on}">${i + 1}${puntos ? `<span class="cal-dots">${puntos}</span>` : ''}</button>`; }).join('');
+    const otros = [...b.fechas, ...Object.values(b.rutasExtra).flat()].filter(f => !f.startsWith(b.periodo));
     const meses = [...new Set(otros.map(f => f.slice(0, 7)))];
     $('#otros').hidden = !otros.length;
     $('#otros').textContent = otros.length ? `ⓘ También hay ${otros.length} fecha(s) marcadas en ${meses.map(periodoTxt).join(', ')}. Esta bitácora es de ${periodoTxt(b.periodo)} y solo guarda las de ese mes.` : '';
@@ -937,11 +1050,11 @@ function viewBitacora(param = '') {
   $('#prevM').onclick = () => irMes(-1);
   $('#nextM').onclick = () => irMes(1);
   $('#hoyM').onclick = () => { $('#per').value = hoy().slice(0, 7); sync(); };
-  $('#cal').onclick = e => { const d = e.target.dataset.d; if (!d) return; b.fechas = b.fechas.includes(d) ? b.fechas.filter(x => x !== d) : [...b.fechas, d]; marcarSucio(); sync(); };
+  $('#cal').onclick = e => { const d = e.target.closest('[data-d]')?.dataset.d; if (!d) return; const fs = diasRuta(rutaActiva); ponerDias(rutaActiva, fs.includes(d) ? fs.filter(x => x !== d) : [...fs, d]); marcarSucio(); sync(); };
   $('#hab').onclick = () => { const [y, m] = b.periodo.split('-').map(Number), n = new Date(y, m, 0).getDate();
     const lv = Array.from({ length: n }, (_, i) => `${b.periodo}-${String(i + 1).padStart(2, '0')}`).filter(d => { const w = new Date(d + 'T12:00').getDay(); return w > 0 && w < 6 && !festivo(d); }); // hábiles, sin festivos
-    b.fechas = [...b.fechas.filter(f => !f.startsWith(b.periodo)), ...lv]; marcarSucio(); sync(); };
-  $('#none').onclick = () => { b.fechas = b.fechas.filter(f => !f.startsWith(b.periodo)); marcarSucio(); sync(); };
+    ponerDias(rutaActiva, [...diasRuta(rutaActiva).filter(f => !f.startsWith(b.periodo)), ...lv]); marcarSucio(); sync(); };
+  $('#none').onclick = () => { ponerDias(rutaActiva, diasRuta(rutaActiva).filter(f => !f.startsWith(b.periodo))); marcarSucio(); sync(); };
   ['#cli', '#per', '#modo', '#ag', '#est', '#cod', '#plan'].forEach(s => $(s).onchange = () => { marcarSucio(); sync(); });
   $('#pdfTNA')?.addEventListener('click', async () => { if ((sucio || !b.id) && !(await guardar())) return; descargarPDF(b); });
 
@@ -977,21 +1090,28 @@ function viewBitacora(param = '') {
 
   const guardar = async () => {
     if (!cliente(b.clienteId)) { toast('Primero elija el paciente (paso 1)'); $('#buscaPac')?.focus(); return false; }
-    const delMes = fechasDe(b);
-    if (!delMes.length) { toast('Marque al menos un día de ' + periodoTxt(b.periodo) + ' (paso 3)'); $('#paso3')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); return false; }
-    const otros = b.fechas.length - delMes.length;
+    const cG = cliente(b.clienteId), idsRutas = new Set(rutasDe(cG).map(r => r.id));
+    const delMes = fechasRuta(b, RUTA_P);
+    const extraMes = Object.fromEntries(Object.keys(b.rutasExtra).filter(r => idsRutas.has(r)).map(r => [r, fechasRuta(b, r)]).filter(([, fs]) => fs.length));
+    if (!nServicios(b)) { toast('Marque al menos un día de ' + periodoTxt(b.periodo) + ' (paso 3)'); $('#paso3')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); return false; }
+    const otros = b.fechas.length - delMes.length + Object.values(b.rutasExtra).flat().filter(f => !f.startsWith(b.periodo)).length;
     if (otros && !confirm(`Hay ${otros} fecha(s) marcadas en otros meses que NO se guardarán en esta bitácora de ${periodoTxt(b.periodo)}. ¿Continuar?`)) return false;
+    // Dos rutas el mismo día: avisar si se cruzan las horas (la ida de una antes del regreso de la otra)
+    const cruces = fechasDe(b).filter(f => { const rs = rutasDe(cG).filter(r => fechasRuta(b, r.id).includes(f)).sort((x, y) => (x.horaIda || '').localeCompare(y.horaIda || ''));
+      return rs.some((r, i) => i && (r.horaIda || '') < (rs[i - 1].horaRegreso || '')); });
+    if (cruces.length && !confirm(`Las rutas se cruzan de hora el ${cruces.map(fechaDoc).join(', ')} (una ida empieza antes del regreso de la otra). ¿Guardar igual?`)) return false;
     const dup = DB.bitacoras.find(x => x.clienteId === b.clienteId && x.periodo === b.periodo && x.id !== b.id && codigoDe(x) === b.codigo && (x.plan || '') === (b.plan || ''));
     if (dup && !confirm('Ya existe una bitácora de este cliente para ese mes con el mismo código. ¿Guardar otra?')) return false;
     // solo se guardan fechas y correcciones del mes de la bitácora
-    const claves = new Set(delMes.flatMap(f => [`${f}|ida`, `${f}|reg`]));
+    const claves = new Set([...delMes.flatMap(f => [`${f}|ida`, `${f}|reg`]),
+      ...Object.entries(extraMes).flatMap(([r, fs]) => fs.flatMap(f => [`${f}|${r}|ida`, `${f}|${r}|reg`]))]);
     const ajustes = Object.fromEntries(Object.entries(b.ajustes).filter(([k]) => claves.has(k)));
     const excluidas = b.excluidas.filter(k => claves.has(k));
     const { id: _id, creado, ...resto } = b;
-    const data = { ...resto, fechas: delMes, ajustes, excluidas };
+    const data = { ...resto, fechas: delMes, rutasExtra: extraMes, ajustes, excluidas };
     if (!b.id) { const s = await api('POST', 'bitacoras', data, { clave: claveBit, duplicado: !!dup }); b.id = s.id; history.replaceState(null, '', '#/bitacora/' + s.id); }
     else await api('PUT', 'bitacoras/' + b.id, data);
-    b.fechas = delMes; b.ajustes = ajustes; b.excluidas = excluidas;
+    b.fechas = delMes; b.rutasExtra = { ...extraMes }; b.ajustes = ajustes; b.excluidas = excluidas;
     marcarSucio(false); renderCal(); toast('Bitácora guardada'); return true;
   };
   $('#save').onclick = guardar;
@@ -1014,16 +1134,31 @@ function viewBitacora(param = '') {
 }
 
 /* ===== Render del documento (réplica del formato original) ===== */
-const fechasDe = b => (b.fechas || []).filter(f => f.startsWith(b.periodo)).sort();
+/* Rutas: cada paciente tiene la ruta principal (sus campos de siempre) y puede tener rutas adicionales (c.rutas).
+   La bitácora guarda los días de la principal en b.fechas y los de cada ruta adicional en b.rutasExtra[rutaId]. */
+const RUTA_P = 'p';
+const rutasDe = c => !c ? [] : [{ id: RUTA_P, nombre: 'Ruta principal', origen: c.origen, ips: c.ips, regreso: c.regreso, horaIda: c.horaIda, horaRegreso: c.horaRegreso, codigo: '' }, ...(c.rutas || [])];
+const rutaDe = (c, rid) => rutasDe(c).find(r => r.id === rid);
+const nombreRuta = (r, i) => r.nombre || (r.id === RUTA_P ? 'Ruta principal' : `Ruta ${i + 1}`);
+const fechasRuta = (b, rid) => ((rid === RUTA_P ? b.fechas : b.rutasExtra?.[rid]) || []).filter(f => f.startsWith(b.periodo)).sort();
+const rutasUsadas = b => [RUTA_P, ...Object.keys(b.rutasExtra || {})].filter(r => fechasRuta(b, r).length);
+const nServicios = b => rutasUsadas(b).reduce((s, r) => s + fechasRuta(b, r).length, 0);
+// Días del mes con al menos un servicio (cualquier ruta)
+const fechasDe = b => [...new Set(rutasUsadas(b).flatMap(r => fechasRuta(b, r)))].sort();
 const CAMPOS_EDIT = ['dir', 'hora', 'ips', 'cod', 'desc', 'cant'];
-// Filas de la bitácora: base (cliente + campos fijos) + correcciones hechas en el documento
+// Filas de la bitácora: base (ruta del paciente + campos fijos) + correcciones hechas en el documento.
+// Orden: por fecha y, dentro del mismo día, por hora de ida de cada ruta (ida y regreso de cada una, juntas).
 function filas(b, c = cliente(b.clienteId)) {
   const out = [], aj = b.ajustes || {}, ex = new Set(b.excluidas || []);
-  const cod = codigoDe(b, c), desc = descDe(b, c); // por bitácora → por cliente → global (ver lote.js)
-  for (const f of fechasDe(b)) {
+  const codB = codigoDe(b, c), descB = descDe(b, c); // por bitácora → por cliente → global (ver lote.js)
+  const servicios = rutasDe(c).flatMap(r => fechasRuta(b, r.id).map(f => ({ f, r })))
+    .sort((x, y) => x.f.localeCompare(y.f) || (x.r.horaIda || '').localeCompare(y.r.horaIda || ''));
+  for (const { f, r } of servicios) {
+    const pre = r.id === RUTA_P ? f : `${f}|${r.id}`; // la principal conserva las claves de siempre
+    const cod = r.codigo || codB, desc = r.codigo ? descCodigo(r.codigo) || descB : descB;
     const bases = [
-      { key: `${f}|ida`, tramo: 'ida', fecha: f, dir: c.origen, hora: hora12(c.horaIda), ips: c.ips, cod, desc, cant: '1' },
-      { key: `${f}|reg`, tramo: 'reg', fecha: f, dir: c.ips, hora: hora12(c.horaRegreso), ips: c.regreso, cod: '', desc: '', cant: '' },
+      { key: `${pre}|ida`, tramo: 'ida', ruta: r.id, fecha: f, dir: r.origen, hora: hora12(r.horaIda), ips: r.ips, cod, desc, cant: '1' },
+      { key: `${pre}|reg`, tramo: 'reg', ruta: r.id, fecha: f, dir: r.ips, hora: hora12(r.horaRegreso), ips: r.regreso, cod: '', desc: '', cant: '' },
     ];
     for (const base of bases) out.push({ ...base, ...(aj[base.key] || {}), base, mod: aj[base.key] || {}, excl: ex.has(base.key) });
   }
@@ -1153,7 +1288,7 @@ function viewAgenda() {
   const pend = list.filter(b => b.estado !== 'firmado'), hechas = list.filter(b => b.estado === 'firmado');
   const pgP = paginar(pend, AGENDA_PAG, 20);
   const fila = b => { const c = cliente(b.clienteId), e = estadoFirma(b); return `<tr>
-    <td><b>${esc(c?.paciente || '—')}</b><br><small class="muted">${nombreFirmante(c) ? 'Firma: ' + esc(nombreFirmante(c)) : 'Sin firmante registrado'} · ${periodoTxt(b.periodo)} · ${fechasDe(b).length} servicios</small></td>
+    <td><b>${esc(c?.paciente || '—')}</b><br><small class="muted">${nombreFirmante(c) ? 'Firma: ' + esc(nombreFirmante(c)) : 'Sin firmante registrado'} · ${periodoTxt(b.periodo)} · ${nServicios(b)} servicios</small></td>
     <td>${b.agendaFirma ? `<b>${fechaLarga(b.agendaFirma)}</b>` : '<span class="badge b-mute">Sin agendar</span>'}</td>
     <td>${modoBadge(b)}</td><td><span class="badge ${e.cls}">${e.txt}</span></td>
     <td style="text-align:right;white-space:nowrap">
